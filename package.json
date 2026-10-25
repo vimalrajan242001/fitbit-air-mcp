@@ -1,0 +1,30 @@
+{
+  "name": "fitbit-air-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local MCP server that reads one person's Fitbit Air data through the Google Health API.",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node scripts/run-tests.mjs",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "npm run typecheck && npm test && npm run build",
+    "login": "node dist/index.js login",
+    "start": "node dist/index.js",
+    "secret-scan": "node scripts/secret-scan.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

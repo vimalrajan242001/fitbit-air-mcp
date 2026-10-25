@@ -1,0 +1,62 @@
+{
+  "dataPoints": [
+    {
+      "name": "users/2515055256096816351/dataTypes/sleep/dataPoints/2724123844716220216",
+      "dataSource": {
+        "recordingMethod": "DERIVED",
+        "device": { "displayName": "Charge 6" },
+        "platform": "FITBIT"
+      },
+      "sleep": {
+        "interval": {
+          "startTime": "2026-03-03T20:57:30Z",
+          "startUtcOffset": "0s",
+          "endTime": "2026-03-04T04:41:30Z",
+          "endUtcOffset": "0s"
+        },
+        "type": "STAGES",
+        "stages": [
+          {
+            "startTime": "2026-03-03T20:57:30Z",
+            "startUtcOffset": "0s",
+            "endTime": "2026-03-03T20:59:30Z",
+            "endUtcOffset": "0s",
+            "type": "AWAKE",
+            "createTime": "2026-03-04T04:43:40.937183Z",
+            "updateTime": "2026-03-04T04:43:40.937183Z"
+          },
+          {
+            "startTime": "2026-03-04T04:07:30Z",
+            "startUtcOffset": "0s",
+            "endTime": "2026-03-04T04:41:30Z",
+            "endUtcOffset": "0s",
+            "type": "AWAKE",
+            "createTime": "2026-03-04T04:43:40.937183Z",
+            "updateTime": "2026-03-04T04:43:40.937183Z"
+          }
+        ],
+        "metadata": {
+          "stagesStatus": "SUCCEEDED",
+          "processed": true,
+          "main": true
+        },
+        "summary": {
+          "minutesInSleepPeriod": "464",
+          "minutesAfterWakeUp": "0",
+          "minutesToFallAsleep": "0",
+          "minutesAsleep": "407",
+          "minutesAwake": "57",
+          "stagesSummary": [
+            { "type": "AWAKE", "minutes": "56", "count": "12" },
+            { "type": "LIGHT", "minutes": "198", "count": "19" },
+            { "type": "DEEP", "minutes": "114", "count": "10" },
+            { "type": "REM", "minutes": "94", "count": "4" }
+          ]
+        },
+        "createTime": "2026-03-04T04:43:40.337983Z",
+        "updateTime": "2026-03-04T04:43:40.937183Z"
+      }
+    }
+  ],
+  "nextPageToken": ""
+}
