@@ -33,7 +33,9 @@ test('connection_status reports link state and never returns tokens', async () =
     const dueAt = new Date('2026-03-08T00:00:00.000Z');
     const before = new Date(dueAt.getTime() - 1);
     writeTokenFile(dir, tokens(before, 60 * 60 * 1000));
-    assert.equal(statSync(join(dir, 'tokens.json')).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.equal(statSync(join(dir, 'tokens.json')).mode & 0o777, 0o600);
+    }
     const linked = fakeHealthApi(async () => ({ name: 'users/me/identity' }));
     const fresh = await connectionStatus(dir, linked, before);
     assert.equal(fresh.healthAccountLinked, true);

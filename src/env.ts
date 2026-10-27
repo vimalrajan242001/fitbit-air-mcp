@@ -21,6 +21,14 @@ export function loadOAuthClient(configDir: string): OAuthClient {
   if (!clientId || !clientSecret) {
     throw new Error(`Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in ${file}.`);
   }
+  if (
+    clientId.includes('your-google-oauth-client-id') ||
+    clientId.startsWith('<') ||
+    clientSecret.includes('your-google-oauth-client-secret') ||
+    clientSecret.startsWith('<')
+  ) {
+    throw new Error(`Replace placeholder credentials with your Google OAuth client ID and secret in ${file}.`);
+  }
   try {
     chmodSync(file, 0o600);
   } catch {

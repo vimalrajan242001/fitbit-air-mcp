@@ -187,26 +187,29 @@ function waitForCallback(server: ReturnType<typeof createServer>, expectedState:
       const error = url.searchParams.get('error');
       if (error) {
         const description = url.searchParams.get('error_description') ?? '';
-        response.writeHead(400, { 'content-type': 'text/html; charset=utf-8' });
-        response.end(page('Login did not finish. You can close this window.'));
-        if (error === 'redirect_uri_mismatch' || description.includes('redirect_uri_mismatch')) {
-          finish(new Error(REDIRECT_MISMATCH_MESSAGE));
-          return;
-        }
-        finish(new Error(`Google returned ${error}.`));
+        response.writeHead(400, { 'content-type': 'text/html; charset=utf-8', connection: 'close' });
+        response.end(page('Login did not finish. You can close this window.'), () => {
+          if (error === 'redirect_uri_mismatch' || description.includes('redirect_uri_mismatch')) {
+            finish(new Error(REDIRECT_MISMATCH_MESSAGE));
+            return;
+          }
+          finish(new Error(`Google returned ${error}.`));
+        });
         return;
       }
       const code = url.searchParams.get('code');
       const state = url.searchParams.get('state');
       if (!code || !state || state !== expectedState) {
-        response.writeHead(400, { 'content-type': 'text/html; charset=utf-8' });
-        response.end(page('Login state did not match. You can close this window.'));
-        finish(new Error('Login state did not match. Run npm run login again.'));
+        response.writeHead(400, { 'content-type': 'text/html; charset=utf-8', connection: 'close' });
+        response.end(page('Login state did not match. You can close this window.'), () => {
+          finish(new Error('Login state did not match. Run npm run login again.'));
+        });
         return;
       }
-      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      response.end(page('Login finished. You can close this window.'));
-      finish(undefined, { code, state });
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', connection: 'close' });
+      response.end(page('Login finished. You can close this window.'), () => {
+        finish(undefined, { code, state });
+      });
     };
     server.on('request', onRequest);
   });
@@ -222,13 +225,14 @@ function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
       resolve();
       return;
     }
+    server.closeAllConnections?.();
     server.close(() => resolve());
   });
 }
 
 export function openSystemBrowser(url: string): void {
   const command = process.platform === 'win32' ? 'cmd' : process.platform === 'darwin' ? 'open' : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url.replace(/&/g, '^&')] : [url];
   const child = spawn(command, args, { stdio: 'ignore', detached: true, windowsHide: true });
   child.on('error', () => {
     log('The browser did not open. Use the consent URL printed above.');

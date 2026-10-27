@@ -1,12 +1,17 @@
 # Fitbit Air MCP
 
-A local [Model Context Protocol](https://modelcontextprotocol.io) server that reads one person’s Fitbit Air data through the [Google Health API](https://developers.google.com/health/about). Cursor, or any other stdio client, starts it. The same process also serves streamable HTTP on `127.0.0.1:8788` and nowhere else.
+A personal [Model Context Protocol](https://modelcontextprotocol.io) server that reads Fitbit Air data through the [Google Health API](https://developers.google.com/health/about).
 
-This is a personal-use server for one Google account in OAuth Testing mode. The public repository must never contain the OAuth client id, the client secret, a refresh token, an access token, or `tokens.json`.
+It supports:
+- **Local stdio mode:** Launched directly by Cursor, Claude Desktop, or other stdio MCP clients.
+- **Streamable HTTP mode (`/mcp`):** Listens on `127.0.0.1:8788` for local or tunneled HTTP connections.
+- **Remote / cross-machine mode:** Exposes the `/mcp` endpoint over secure tunnels (ngrok or Cloudflare Tunnel) to connect clients running on another machine (macOS, Windows, or ChatGPT).
 
-The band syncs to the Google Health app. This process does not pair with it, and it does not call `api.fitbit.com`.
+The band syncs to the Google Health mobile app. This MCP server communicates with the Google Health API; it does not pair with the tracker directly and it never calls `api.fitbit.com`.
 
-## What it exposes
+---
+
+## Capabilities
 
 | Tool | What it returns |
 | --- | --- |
@@ -16,56 +21,89 @@ The band syncs to the Google Health app. This process does not pair with it, and
 | `sleep_nights` | In-bed and asleep minutes, stage minutes, and short awakenings |
 | `compare_periods` | Two daily-activity ranges, their totals, and the deltas |
 
-`fitbit://today` is a short snapshot: today’s steps and zone minutes, last night’s sleep, and the last sync time. It is not a Sleep Score and it is not a diagnosis.
+| Resource | What it returns |
+| --- | --- |
+| `fitbit://today` | Snapshot of today's steps, active zone minutes, last night's sleep, and last tracker sync time |
 
-A day with no wearable samples is reported as missing, not as zero. The hardware address on a paired device is removed before the result is built. Tokens are never returned.
+*Note: Missing days in wearable data are reported as missing, not as zero. Hardware MAC addresses are stripped before responses are returned. Credentials and tokens are never returned.*
 
-## Setup on Windows
+---
 
-Install Node.js 22 or newer. Put this project at `%USERPROFILE%\fitbit-air-mcp` so the Cursor config below matches.
+## Prerequisites
 
-Create the env file outside the repo. Put the client id and client secret from Google Cloud on their own lines. Do not commit that file.
+1. **Node.js 22 or newer** installed.
+2. **Google Cloud Project** with:
+   - Google Health API enabled.
+   - OAuth 2.0 Client (Desktop app or Web app).
+   - Authorized redirect URI set exactly to `http://127.0.0.1:8787`.
+   - OAuth consent screen configured in **Testing** mode with your Google account added as a test user.
+3. *(Optional)* **ngrok** or **cloudflared** installed if you want to expose the server for remote cross-machine access.
 
-```bat
-mkdir "%USERPROFILE%\.config\fitbit-air-mcp"
-notepad "%USERPROFILE%\.config\fitbit-air-mcp\env"
-icacls "%USERPROFILE%\.config\fitbit-air-mcp\env" /inheritance:r /grant:r "%USERNAME%:(R,W)"
-```
+---
 
-The file looks like this, with your own values in place of the placeholders:
+## Setup
 
-```
-GOOGLE_OAUTH_CLIENT_ID=<client id from Google Cloud>
-GOOGLE_OAUTH_CLIENT_SECRET=<client secret from Google Cloud>
-```
+Credentials stay **outside the repository** in your user directory. Never commit credentials or tokens.
 
-The OAuth client is a Desktop client, or a Web client whose redirect URI is exactly `http://127.0.0.1:8787`. The Google account must be a test user on a Testing consent screen. Publish stays off.
+### On Windows
 
-From the project directory:
+1. Create the environment folder and file:
+   ```cmd
+   mkdir "%USERPROFILE%\.config\fitbit-air-mcp"
+   notepad "%USERPROFILE%\.config\fitbit-air-mcp\env"
+   ```
+2. Restrict file permissions to your user account:
+   ```cmd
+   icacls "%USERPROFILE%\.config\fitbit-air-mcp\env" /inheritance:r /grant:r "%USERNAME%:(R,W)"
+   ```
+3. Add your Google OAuth credentials to `%USERPROFILE%\.config\fitbit-air-mcp\env`:
+   ```env
+   GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+   GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
+   ```
+4. Install dependencies and build:
+   ```cmd
+   npm ci
+   npm run build
+   ```
+5. Authenticate with Google:
+   ```cmd
+   npm run login
+   ```
+   *This opens your browser for PKCE consent on `http://127.0.0.1:8787` and writes `%USERPROFILE%\.config\fitbit-air-mcp\tokens.json`.*
 
-```bat
-cd /d "%USERPROFILE%\fitbit-air-mcp"
-npm ci
-npm run build
-npm run login
-npm start
-```
+### On macOS / Linux
 
-`npm run login` opens the browser, listens on `127.0.0.1:8787`, and writes `%USERPROFILE%\.config\fitbit-air-mcp\tokens.json` for the owner only. It then exits. Sign in as the test user and accept the unverified-app warning.
+1. Create the environment folder and file:
+   ```bash
+   mkdir -p ~/.config/fitbit-air-mcp
+   nano ~/.config/fitbit-air-mcp/env
+   ```
+2. Restrict file permissions:
+   ```bash
+   chmod 600 ~/.config/fitbit-air-mcp/env
+   ```
+3. Add your credentials:
+   ```env
+   GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+   GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
+   ```
+4. Install dependencies, build, and login:
+   ```bash
+   npm ci
+   npm run build
+   npm run login
+   ```
 
-If login says the redirect URI does not match, the client is a Web client: add `http://127.0.0.1:8787` exactly. Do not create a new Cloud project.
+---
 
-If login says phone setup is unfinished, open the Google Health app and finish linking the Google account, then run `npm run login` again.
+## Usage Modes
 
-Testing-mode refresh tokens last 7 days. When `connection_status` says login is due, run `npm run login` again.
+### Mode 1: Local Stdio Client (Cursor / Claude Desktop)
 
-`npm start` keeps stdio and `http://127.0.0.1:8788/mcp` up. Cursor starts the same command itself, so do not run `npm start` at the same time as Cursor or the second process will not be able to bind port 8788.
+In this mode, your MCP client launches the server as a local child process.
 
-On Linux and macOS the env directory is `~/.config/fitbit-air-mcp/` and the commands are `npm ci`, `npm run build`, `npm run login`, and `npm start`.
-
-## Cursor
-
-User-level config, `~/.cursor/mcp.json` (on Windows, `%USERPROFILE%\.cursor\mcp.json`). The env file stays outside the repo.
+Configure `~/.cursor/mcp.json` (macOS) or `%USERPROFILE%\.cursor\mcp.json` (Windows):
 
 ```json
 {
@@ -80,23 +118,101 @@ User-level config, `~/.cursor/mcp.json` (on Windows, `%USERPROFILE%\.cursor\mcp.
 }
 ```
 
-Other stdio clients use the same `node` command. Logs are written to stderr because stdout is the MCP protocol.
+> [!NOTE]
+> When Cursor runs `fitbit-air-mcp` via stdio, the process also binds port `8788`. Do not run a separate `npm start` while Cursor is running, or it will conflict on port `8788`.
 
-## Checks
+---
 
-```bat
+### Mode 2: Remote / Cross-Machine via Tunnel (ngrok or Cloudflare)
+
+Use this mode if you want to host the server on one computer (e.g., Windows PC) and connect to it from another machine (e.g., MacBook, another PC, or ChatGPT).
+
+#### 1. Start the HTTP server on the host machine
+```bash
+npm start
+```
+*The server listens on `http://127.0.0.1:8788/mcp`.*
+
+#### 2. Start the tunnel
+In a separate terminal on the host machine:
+
+* **Using ngrok:**
+  ```bash
+  npm run ngrok
+  ```
+  *(Runs ngrok rewriting the host header: `ngrok http 8788 --host-header=127.0.0.1:8788`).*
+
+* **Using Cloudflare Tunnel:**
+  ```bash
+  npm run tunnel
+  ```
+
+#### 3. Connect from the client machine
+On your second machine (Mac or Windows):
+
+* **In Cursor (`~/.cursor/mcp.json`):**
+  ```json
+  {
+    "mcpServers": {
+      "fitbit-air": {
+        "url": "https://<your-tunnel-domain>/mcp"
+      }
+    }
+  }
+  ```
+* **In ChatGPT / Custom MCP integrations:**
+  Provide the SSE/HTTP endpoint: `https://<your-tunnel-domain>/mcp`.
+
+---
+
+### Mode 3: Running Standalone on a Second Machine
+
+If you want the second machine (Mac or Windows) to run the server completely standalone without keeping your primary computer on:
+
+1. Install Node.js 22+ on the new machine.
+2. Clone this repository onto the new machine.
+3. Follow the **Setup** section above to create `~/.config/fitbit-air-mcp/env` with the same Google OAuth credentials.
+4. Run `npm ci`, `npm run build`, and `npm run login` to authenticate directly from that machine.
+5. Add the local stdio configuration to Cursor.
+
+---
+
+## Token Lifecycle (7-Day Expiry)
+
+In Google Cloud OAuth **Testing mode**, refresh tokens expire **every 7 days**:
+- When `connection_status` reports that login is due, run:
+  ```bash
+  npm run login
+  ```
+- Complete the browser consent prompt to generate a fresh 7-day token.
+
+---
+
+## Verification & Checks
+
+Before submitting changes, run the validation harness:
+```bash
 npm ci
 npm run check
 ```
+`npm run check` runs:
+1. TypeScript typecheck (`tsc --noEmit`).
+2. Node.js unit and integration tests (20 tests covering activity, sleep, devices, auth, harness, and secrets).
+3. Production build (`tsc -p tsconfig.build.json`).
 
-`npm run check` runs typecheck, tests, and the build. Tests use published Google Health JSON examples. They do not call Google and they do not contain credentials.
+> [!TIP]
+> If `test/http.test.ts` fails with `EADDRINUSE: 127.0.0.1:8788`, stop any running `npm start` process or close Cursor before running checks.
 
-`tsconfig` sets `"types": ["node"]` so the project typechecks on TypeScript 6 and later.
+---
 
-GitHub Actions runs `npm ci`, `npm run check`, a secret scan, and gitleaks. A secret match fails the workflow.
+## Troubleshooting
 
-## Account time zone
+- **`EADDRINUSE: 127.0.0.1:8788`**: A previously started server or Cursor instance is holding port 8788. Terminate the existing node process.
+- **`redirect_uri_mismatch`**: Your Google OAuth client must have `http://127.0.0.1:8787` listed under Authorized redirect URIs.
+- **403 Forbidden via Tunnel**: MCP security validates the `Host` header. Always pass `--host-header=127.0.0.1:8788` with ngrok or `--http-host-header 127.0.0.1:8788` with cloudflared (already configured in `npm run ngrok` and `npm run tunnel`).
 
-`fitbit://today` uses the `timeZone` from `GET /users/me/settings`. Daily activity uses `dailyRollUp`, which follows the civil day stored with each sample.
+---
 
-More detail for later edits is in [docs/context.md](docs/context.md). Agents should start with [AGENTS.md](AGENTS.md).
+## Agents & Contributing
+
+Agents working on this repository must read [AGENTS.md](AGENTS.md) and adhere to the minimal change standards. Technical context on the Google Health API data models is in [docs/context.md](docs/context.md).
