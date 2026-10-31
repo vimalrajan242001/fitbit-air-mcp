@@ -1,7 +1,7 @@
 import { ACCESS_TOKEN_SKEW_MS } from './constants.js';
 import type { HealthApi } from './health.js';
 import { HealthCallError, type Missing } from './errors.js';
-import { loginDeadline, loginIsDue, readTokenFile, type TokenFile } from './tokens.js';
+import { loginDeadline, loginIsDue, readTokenFile, type RemoteToken } from './tokens.js';
 
 export type ConnectionStatus = {
   healthAccountLinked: boolean;
@@ -13,10 +13,10 @@ export type ConnectionStatus = {
   missing: Missing[];
 };
 
-export async function connectionStatus(configDir: string, api: HealthApi, now: Date): Promise<ConnectionStatus> {
-  let tokens: TokenFile | null;
+export async function connectionStatus(configDir: string, api: HealthApi, now: Date, remote?: RemoteToken): Promise<ConnectionStatus> {
+  let tokens: RemoteToken | null;
   try {
-    tokens = readTokenFile(configDir);
+    tokens = remote ?? readTokenFile(configDir);
   } catch (error) {
     return {
       healthAccountLinked: false,
@@ -55,7 +55,7 @@ export async function connectionStatus(configDir: string, api: HealthApi, now: D
   }
   try {
     await api.get('/users/me/identity');
-    const latest = readTokenFile(configDir) ?? tokens;
+    const latest = (remote ? null : readTokenFile(configDir)) ?? tokens;
     return {
       healthAccountLinked: true,
       phoneSetupUnfinished: false,

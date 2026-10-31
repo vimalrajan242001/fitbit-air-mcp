@@ -125,6 +125,9 @@ Configure `~/.cursor/mcp.json` (macOS) or `%USERPROFILE%\.cursor\mcp.json` (Wind
 
 ### Mode 2: Remote / Cross-Machine via Tunnel (ngrok or Cloudflare)
 
+> [!WARNING]
+> Tunnels expose `/mcp` with no authentication. Prefer **Mode 4: Cloudflare Workers**.
+
 Use this mode if you want to host the server on one computer (e.g., Windows PC) and connect to it from another machine (e.g., MacBook, another PC, or ChatGPT).
 
 #### 1. Start the HTTP server on the host machine
@@ -174,6 +177,29 @@ If you want the second machine (Mac or Windows) to run the server completely sta
 3. Follow the **Setup** section above to create `~/.config/fitbit-air-mcp/env` with the same Google OAuth credentials.
 4. Run `npm ci`, `npm run build`, and `npm run login` to authenticate directly from that machine.
 5. Add the local stdio configuration to Cursor.
+
+---
+
+### Mode 4: Cloudflare Workers (use from anywhere, sign in from the client)
+
+The Worker (`src/worker.ts`) is an MCP OAuth server in front of Google. When a client connects, it opens a consent page, then Google sign-in. No `npm run login`, no PC left running. It runs on the free Workers plan, and no card is needed.
+
+One-time deploy:
+
+1. `npx wrangler login`
+2. `npx wrangler kv namespace create OAUTH_KV`, then put the id in `wrangler.toml`.
+3. `npx wrangler secret put GOOGLE_OAUTH_CLIENT_ID` and `npx wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET`
+4. `npm run deploy`. Copy the `https://fitbit-air-mcp.<you>.workers.dev` URL into `PUBLIC_URL` in `wrangler.toml`, then run `npm run deploy` again.
+5. In Google Cloud Console, add `https://fitbit-air-mcp.<you>.workers.dev/callback` to the OAuth client's **Authorized redirect URIs**. Keep the consent screen's test users to your own account: they are the only people who can sign in.
+
+Connect:
+
+- **Claude Code:** `claude mcp add --transport http fitbit-air https://fitbit-air-mcp.<you>.workers.dev/mcp`, then run `/mcp` and sign in.
+- **claude.ai (web and mobile):** Settings → Connectors → Add custom connector, using the same URL.
+
+While the Google app is in Testing mode, access ends after 7 days. When that happens, the client asks you to reconnect, and you sign in again from the client.
+
+Local run: `npm run dev:worker -- --var PUBLIC_URL:http://localhost:8790` (secrets go in `.dev.vars`, which is git-ignored).
 
 ---
 

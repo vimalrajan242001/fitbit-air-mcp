@@ -13,13 +13,14 @@ import { readToday } from './today.js';
 
 const dateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 
-export type ServerDeps = Partial<Pick<TokenDeps, 'configDir' | 'fetchImpl' | 'now'>>;
+export type ServerDeps = Partial<Pick<TokenDeps, 'configDir' | 'fetchImpl' | 'now' | 'remote'>>;
 
 export function createFitbitServer(partial: ServerDeps = {}): McpServer {
   const deps: TokenDeps = {
     configDir: partial.configDir ?? defaultConfigDir(),
     fetchImpl: partial.fetchImpl ?? globalThis.fetch,
     now: partial.now ?? (() => new Date()),
+    remote: partial.remote,
   };
   const api = createHealthApi(deps);
   const server = new McpServer({ name: 'fitbit-air', version: '0.1.0' });
@@ -31,7 +32,7 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
         'Report whether the Google Health account is linked, which scopes were granted, when the access token expires, and when Testing-mode login is due. Does not return tokens or the OAuth client.',
       inputSchema: z.object({}),
     },
-    async () => textResult(await connectionStatus(deps.configDir, api, deps.now())),
+    async () => textResult(await connectionStatus(deps.configDir, api, deps.now(), deps.remote)),
   );
 
   server.registerTool(

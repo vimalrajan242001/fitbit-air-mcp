@@ -8,3 +8,5 @@ coverage/
 tokens.json
 **/tokens.json
 .config/
+.wrangler/
+.dev.vars

@@ -1,0 +1,14 @@
+name = "fitbit-air-mcp"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+PUBLIC_URL = "https://fitbit-air-mcp.fitbit-air-mcp.workers.dev"
+
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "c59a14628c12465e875c33afdda03926"
+
+[observability]
+enabled = true
