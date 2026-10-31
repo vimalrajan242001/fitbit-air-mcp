@@ -16,6 +16,7 @@
     "login": "node dist/index.js login",
     "start": "node dist/index.js",
     "secret-scan": "node scripts/secret-scan.mjs",
+    "pentest": "node scripts/pentest.mjs",
     "tunnel": "powershell -ExecutionPolicy Bypass -File ./scripts/start-tunnel.ps1",
     "ngrok": "ngrok http 8788 --url=https://dangling-down-bodacious.ngrok-free.dev --host-header=127.0.0.1:8788",
     "dev:worker": "wrangler dev --port 8790",
