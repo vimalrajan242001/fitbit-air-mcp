@@ -188,7 +188,7 @@ One-time deploy:
 
 1. `npx wrangler login`
 2. `npx wrangler kv namespace create OAUTH_KV`, then put the id in `wrangler.toml`.
-3. `npx wrangler secret put GOOGLE_OAUTH_CLIENT_ID` and `npx wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET`
+3. `npx wrangler secret put GOOGLE_OAUTH_CLIENT_ID`, `npx wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET`, and `npx wrangler secret put CONSENT_SECRET` (32+ random characters; it signs the cookie that remembers your approval)
 4. `npm run deploy`. Copy the `https://fitbit-air-mcp.<you>.workers.dev` URL into `PUBLIC_URL` in `wrangler.toml`, then run `npm run deploy` again.
 5. In Google Cloud Console, add `https://fitbit-air-mcp.<you>.workers.dev/callback` to the OAuth client's **Authorized redirect URIs**. Keep the consent screen's test users to your own account: they are the only people who can sign in.
 
@@ -197,7 +197,15 @@ Connect:
 - **Claude Code:** `claude mcp add --transport http fitbit-air https://fitbit-air-mcp.<you>.workers.dev/mcp`, then run `/mcp` and sign in.
 - **claude.ai (web and mobile):** Settings → Connectors → Add custom connector, using the same URL.
 
+The consent page appears once per client per 30 days in each browser. After that, reconnecting goes straight to Google.
+
 While the Google app is in Testing mode, access ends after 7 days. When that happens, the client asks you to reconnect, and you sign in again from the client.
+
+Auto-deploy: every push to `main` runs the checks, deploys, then smoke-tests `/.well-known/oauth-authorization-server` (200) and `/mcp` (401). One-time setup:
+
+1. Create a Cloudflare API token from the "Edit Cloudflare Workers" template.
+2. In GitHub, go to Settings → Environments → `production`, and add the secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+3. To get an email on success as well as failure, go to GitHub → Settings → Notifications → Actions and untick "Only notify for failed workflows".
 
 Local run: `npm run dev:worker -- --var PUBLIC_URL:http://localhost:8790` (secrets go in `.dev.vars`, which is git-ignored).
 

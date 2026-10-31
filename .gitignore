@@ -9,4 +9,5 @@ tokens.json
 **/tokens.json
 .config/
 .wrangler/
+dist-worker/
 .dev.vars

@@ -6,6 +6,7 @@ import {
   OAuthError,
   OAuthProvider,
   authorizationErrorRedirect,
+  type AuthRequest,
   type ConsentDescription,
   type OAuthHelpers,
   type TokenExchangeCallbackOptions,
@@ -25,6 +26,8 @@ export type Env = {
   GOOGLE_OAUTH_CLIENT_SECRET: string;
   /** Public origin of this Worker, e.g. https://fitbit-air-mcp.example.workers.dev */
   PUBLIC_URL: string;
+  /** Signs the remembered-consent cookie. 32+ random chars. */
+  CONSENT_SECRET: string;
 };
 
 /** One person's server: every grant belongs to the same user. */
@@ -48,9 +51,19 @@ export const defaultHandler = {
     const url = new URL(request.url);
     const oauth = env.OAUTH_PROVIDER;
     const redirectUri = `${env.PUBLIC_URL}/callback`;
+    const toGoogle = async (authRequest: AuthRequest, extra: Headers): Promise<Response> => {
+      const verifier = randomBytes(32).toString('base64url');
+      const { state, headers } = await oauth.beginUpstream(authRequest, { data: { verifier }, headers: extra });
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      headers.set('Location', googleAuthorizeUrl({ clientId: env.GOOGLE_OAUTH_CLIENT_ID, redirectUri, challenge, state }).toString());
+      return new Response(null, { status: 302, headers });
+    };
     try {
       if (url.pathname === '/authorize' && request.method === 'GET') {
         const authRequest = await oauth.parseAuthRequest(request);
+        if (await oauth.isConsentRemembered(request, authRequest, { secret: env.CONSENT_SECRET })) {
+          return toGoogle(authRequest, new Headers());
+        }
         const details = await oauth.describeConsent(authRequest);
         const consent = await oauth.beginConsent(authRequest);
         consent.headers.set('Content-Type', 'text/html; charset=utf-8');
@@ -63,12 +76,8 @@ export const defaultHandler = {
           const denied = await oauth.denyConsent(request, handle);
           return new Response(null, { status: 302, headers: denied.headers });
         }
-        const approved = await oauth.approveConsent(request, handle);
-        const verifier = randomBytes(32).toString('base64url');
-        const { state, headers } = await oauth.beginUpstream(approved.request, { data: { verifier }, headers: approved.headers });
-        const challenge = createHash('sha256').update(verifier).digest('base64url');
-        headers.set('Location', googleAuthorizeUrl({ clientId: env.GOOGLE_OAUTH_CLIENT_ID, redirectUri, challenge, state }).toString());
-        return new Response(null, { status: 302, headers });
+        const approved = await oauth.approveConsent(request, handle, { remember: { secret: env.CONSENT_SECRET } });
+        return toGoogle(approved.request, approved.headers);
       }
       if (url.pathname === '/callback' && request.method === 'GET') {
         const { request: original, data, headers } = await oauth.finishUpstream<{ verifier: string }>(request);
