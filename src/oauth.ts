@@ -32,6 +32,21 @@ export type LoginOptions = {
 
 type CallbackQuery = { code: string; state: string };
 
+/** Google consent URL for the five read scopes, PKCE S256, offline access. */
+export function googleAuthorizeUrl(input: { clientId: string; redirectUri: string; challenge: string; state: string }): URL {
+  const authorize = new URL(OAUTH_AUTHORIZE_URL);
+  authorize.searchParams.set('client_id', input.clientId);
+  authorize.searchParams.set('redirect_uri', input.redirectUri);
+  authorize.searchParams.set('response_type', 'code');
+  authorize.searchParams.set('scope', SCOPES.join(' '));
+  authorize.searchParams.set('code_challenge', input.challenge);
+  authorize.searchParams.set('code_challenge_method', 'S256');
+  authorize.searchParams.set('access_type', 'offline');
+  authorize.searchParams.set('prompt', 'consent');
+  authorize.searchParams.set('state', input.state);
+  return authorize;
+}
+
 export async function login(options: LoginOptions = {}): Promise<LoginResult> {
   const configDir = options.configDir ?? defaultConfigDir();
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
@@ -41,16 +56,7 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
   const state = randomBytes(16).toString('base64url');
-  const authorize = new URL(OAUTH_AUTHORIZE_URL);
-  authorize.searchParams.set('client_id', client.clientId);
-  authorize.searchParams.set('redirect_uri', REDIRECT_URI);
-  authorize.searchParams.set('response_type', 'code');
-  authorize.searchParams.set('scope', SCOPES.join(' '));
-  authorize.searchParams.set('code_challenge', challenge);
-  authorize.searchParams.set('code_challenge_method', 'S256');
-  authorize.searchParams.set('access_type', 'offline');
-  authorize.searchParams.set('prompt', 'consent');
-  authorize.searchParams.set('state', state);
+  const authorize = googleAuthorizeUrl({ clientId: client.clientId, redirectUri: REDIRECT_URI, challenge, state });
 
   const server = createServer();
   try {
@@ -114,8 +120,9 @@ async function identityResult(fetchImpl: typeof fetch, accessToken: string): Pro
   };
 }
 
-async function exchangeCode(input: {
+export async function exchangeCode(input: {
   fetchImpl: typeof fetch;
+  redirectUri?: string;
   now: Date;
   clientId: string;
   clientSecret: string;
@@ -126,7 +133,7 @@ async function exchangeCode(input: {
     code: input.code,
     client_id: input.clientId,
     client_secret: input.clientSecret,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: input.redirectUri ?? REDIRECT_URI,
     grant_type: 'authorization_code',
     code_verifier: input.verifier,
   });

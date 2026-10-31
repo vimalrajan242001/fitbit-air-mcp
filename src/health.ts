@@ -30,7 +30,7 @@ export function createHealthApi(deps: TokenDeps): HealthApi {
 }
 
 async function request(deps: TokenDeps, method: 'GET' | 'POST', path: string, body?: unknown, allowRetry = true): Promise<unknown> {
-  const token = await getAccessToken({ ...deps, force: false });
+  const token = deps.remote?.accessToken ?? (await getAccessToken({ ...deps, force: false }));
   const headers: Record<string, string> = {
     Accept: 'application/json',
     Authorization: `Bearer ${token}`,
@@ -41,7 +41,8 @@ async function request(deps: TokenDeps, method: 'GET' | 'POST', path: string, bo
     init.body = JSON.stringify(body);
   }
   const response = await deps.fetchImpl(healthUrl(path), init);
-  if (response.status === 401 && allowRetry) {
+  // A remote token is refreshed by the MCP client, so a 401 goes back to it.
+  if (response.status === 401 && allowRetry && !deps.remote) {
     await getAccessToken({ ...deps, force: true });
     return request(deps, method, path, body, false);
   }

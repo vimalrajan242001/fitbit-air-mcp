@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { ACCESS_TOKEN_SKEW_MS, OAUTH_TOKEN_URL, TESTING_REFRESH_MS } from './constants.js';
-import { loadOAuthClient } from './env.js';
+import { loadOAuthClient, type OAuthClient } from './env.js';
 import { HealthCallError, findReason, isRecord, sanitizeText } from './errors.js';
 import { tokenPath } from './paths.js';
 
@@ -36,7 +36,7 @@ export function loginDeadline(refreshObtainedAt: string): string {
   return new Date(parsed + TESTING_REFRESH_MS).toISOString();
 }
 
-export function loginIsDue(tokens: TokenFile, now: Date): boolean {
+export function loginIsDue(tokens: Pick<TokenFile, 'refreshObtainedAt'>, now: Date): boolean {
   return now.getTime() >= Date.parse(loginDeadline(tokens.refreshObtainedAt));
 }
 
@@ -81,11 +81,15 @@ export function isTokenFile(value: unknown): value is TokenFile {
   );
 }
 
+/** A token handed in by the remote host instead of the local token file. */
+export type RemoteToken = Omit<TokenFile, 'refreshToken'>;
+
 export type TokenDeps = {
   configDir: string;
   fetchImpl: typeof fetch;
   now: () => Date;
   force?: boolean;
+  remote?: RemoteToken;
 };
 
 export async function getAccessToken(deps: TokenDeps): Promise<string> {
@@ -96,21 +100,20 @@ export async function getAccessToken(deps: TokenDeps): Promise<string> {
     const fresh = !deps.force && Date.parse(current.expiry) - now.getTime() > ACCESS_TOKEN_SKEW_MS;
     if (fresh) return current.accessToken;
     if (loginIsDue(current, now)) throw new HealthCallError('login_due', 'login due');
-    const next = await refreshAccessToken(current, deps, now);
+    const next = await refreshAccessToken(current, loadOAuthClient(deps.configDir), deps.fetchImpl, now);
     writeTokenFile(deps.configDir, next);
     return next.accessToken;
   });
 }
 
-async function refreshAccessToken(current: TokenFile, deps: TokenDeps, now: Date): Promise<TokenFile> {
-  const client = loadOAuthClient(deps.configDir);
+export async function refreshAccessToken(current: TokenFile, client: OAuthClient, fetchImpl: typeof fetch, now: Date): Promise<TokenFile> {
   const body = new URLSearchParams({
     client_id: client.clientId,
     client_secret: client.clientSecret,
     refresh_token: current.refreshToken,
     grant_type: 'refresh_token',
   });
-  const response = await deps.fetchImpl(OAUTH_TOKEN_URL, {
+  const response = await fetchImpl(OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body,
