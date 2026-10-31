@@ -201,6 +201,12 @@ The consent page appears once per client per 30 days in each browser. After that
 
 While the Google app is in Testing mode, access ends after 7 days. When that happens, the client asks you to reconnect, and you sign in again from the client.
 
+Auto-deploy: every push to `main` runs the checks, deploys, then smoke-tests `/.well-known/oauth-authorization-server` (200) and `/mcp` (401). One-time setup:
+
+1. Create a Cloudflare API token from the "Edit Cloudflare Workers" template.
+2. In GitHub, go to Settings → Environments → `production`, and add the secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+3. To get an email on success as well as failure, go to GitHub → Settings → Notifications → Actions and untick "Only notify for failed workflows".
+
 Local run: `npm run dev:worker -- --var PUBLIC_URL:http://localhost:8790` (secrets go in `.dev.vars`, which is git-ignored).
 
 ---
