@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import { comparePeriods, readDailyActivity } from './activity.js';
+import { SERVER_VERSION } from './constants.js';
 import { readSyncStatus } from './devices.js';
 import { createHealthApi } from './health.js';
 import { defaultConfigDir } from './paths.js';
@@ -23,7 +24,7 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
     remote: partial.remote,
   };
   const api = createHealthApi(deps);
-  const server = new McpServer({ name: 'fitbit-air', version: '0.1.0' });
+  const server = new McpServer({ name: 'fitbit-air', version: SERVER_VERSION });
 
   server.registerTool(
     'connection_status',

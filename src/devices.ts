@@ -1,5 +1,5 @@
 import { HealthCallError, isRecord, type Missing } from './errors.js';
-import type { HealthApi } from './health.js';
+import { paginate, type HealthApi } from './health.js';
 
 export type SyncDevice = {
   deviceVersion: string | null;
@@ -29,19 +29,17 @@ export async function readSyncStatus(api: HealthApi): Promise<SyncResult> {
   }
 }
 
-export async function listPairedDevices(api: HealthApi): Promise<unknown[]> {
-  const devices: unknown[] = [];
-  let pageToken: string | undefined;
-  for (let page = 0; page < 10; page += 1) {
-    const params = new URLSearchParams({ pageSize: '100' });
-    if (pageToken) params.set('pageToken', pageToken);
-    const payload = await api.get(`/users/me/pairedDevices?${params.toString()}`);
-    if (!isRecord(payload)) return devices;
-    if (Array.isArray(payload.pairedDevices)) devices.push(...payload.pairedDevices);
-    pageToken = typeof payload.nextPageToken === 'string' && payload.nextPageToken.length > 0 ? payload.nextPageToken : undefined;
-    if (!pageToken) return devices;
-  }
-  throw new HealthCallError('http', 'paging stopped before paired devices were covered');
+export function listPairedDevices(api: HealthApi): Promise<unknown[]> {
+  return paginate(
+    (pageToken) => {
+      const params = new URLSearchParams({ pageSize: '100' });
+      if (pageToken) params.set('pageToken', pageToken);
+      return api.get(`/users/me/pairedDevices?${params.toString()}`);
+    },
+    'pairedDevices',
+    10,
+    'paging stopped before paired devices were covered',
+  );
 }
 
 /** Copies the documented sync fields and drops macAddress. */

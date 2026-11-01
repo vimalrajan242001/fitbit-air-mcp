@@ -110,8 +110,7 @@ Configure `~/.cursor/mcp.json` (macOS) or `%USERPROFILE%\.cursor\mcp.json` (Wind
     "fitbit-air": {
       "type": "stdio",
       "command": "node",
-      "args": ["${userHome}/fitbit-air-mcp/dist/index.js"],
-      "envFile": "${userHome}/.config/fitbit-air-mcp/env"
+      "args": ["${userHome}/fitbit-air-mcp/dist/index.js"]
     }
   }
 }

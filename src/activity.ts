@@ -9,7 +9,7 @@ import {
   type CivilParts,
 } from './dates.js';
 import { HealthCallError, isRecord, type Missing } from './errors.js';
-import type { HealthApi } from './health.js';
+import { paginate, type HealthApi } from './health.js';
 
 export const ACTIVITY_SERIES = [
   'steps',
@@ -130,43 +130,27 @@ export function daysWithData(days: ActivityDay[]): Record<ActivitySeries, number
 }
 
 export function activityTotals(days: ActivityDay[]): ActivityTotals {
-  const totals: ActivityTotals = {};
-  const steps = days.map((day) => day.steps?.countSum).filter((value): value is number => value !== undefined);
-  if (steps.length > 0) totals.stepsCountSum = steps.reduce((sum, value) => sum + value, 0);
-  const distance = days.map((day) => day.distance?.millimetersSum).filter((value): value is number => value !== undefined);
-  if (distance.length > 0) totals.distanceMillimetersSum = distance.reduce((sum, value) => sum + value, 0);
-  const calories = days.map((day) => day.totalCalories?.kcalSum).filter((value): value is number => value !== undefined);
-  if (calories.length > 0) totals.totalCaloriesKcalSum = calories.reduce((sum, value) => sum + value, 0);
-  const activeMinutes = days.flatMap((day) => day.activeMinutes?.byActivityLevel.map((level) => level.activeMinutesSum) ?? []);
-  if (activeMinutes.length > 0) totals.activeMinutesSum = activeMinutes.reduce((sum, value) => sum + value, 0);
-
-  const zoneFields = ['sumInFatBurnHeartZone', 'sumInCardioHeartZone', 'sumInPeakHeartZone'] as const;
-  const zone: NonNullable<ActivityTotals['activeZoneMinutes']> = {};
-  for (const field of zoneFields) {
-    const values = days
-      .map((day) => day.activeZoneMinutes?.[field])
-      .filter((value): value is number => value !== undefined);
-    if (values.length > 0) zone[field] = values.reduce((sum, value) => sum + value, 0);
-  }
-  if (Object.keys(zone).length > 0) totals.activeZoneMinutes = zone;
-  return totals;
+  const zone = defined(Object.fromEntries(ZONE_FIELDS.map((field) => [field, sum(days.map((day) => day.activeZoneMinutes?.[field]))])));
+  return defined({
+    stepsCountSum: sum(days.map((day) => day.steps?.countSum)),
+    distanceMillimetersSum: sum(days.map((day) => day.distance?.millimetersSum)),
+    totalCaloriesKcalSum: sum(days.map((day) => day.totalCalories?.kcalSum)),
+    activeMinutesSum: sum(days.flatMap((day) => day.activeMinutes?.byActivityLevel.map((level) => level.activeMinutesSum) ?? [])),
+    activeZoneMinutes: Object.keys(zone).length > 0 ? zone : undefined,
+  });
 }
 
 export function subtractTotals(periodA: ActivityTotals, periodB: ActivityTotals): ActivityTotals {
-  const deltas: ActivityTotals = {};
-  assignDelta(deltas, 'stepsCountSum', periodA.stepsCountSum, periodB.stepsCountSum);
-  assignDelta(deltas, 'distanceMillimetersSum', periodA.distanceMillimetersSum, periodB.distanceMillimetersSum);
-  assignDelta(deltas, 'totalCaloriesKcalSum', periodA.totalCaloriesKcalSum, periodB.totalCaloriesKcalSum);
-  assignDelta(deltas, 'activeMinutesSum', periodA.activeMinutesSum, periodB.activeMinutesSum);
-  const zoneFields = ['sumInFatBurnHeartZone', 'sumInCardioHeartZone', 'sumInPeakHeartZone'] as const;
-  const zone: NonNullable<ActivityTotals['activeZoneMinutes']> = {};
-  for (const field of zoneFields) {
-    const left = periodA.activeZoneMinutes?.[field];
-    const right = periodB.activeZoneMinutes?.[field];
-    if (left !== undefined && right !== undefined) zone[field] = right - left;
-  }
-  if (Object.keys(zone).length > 0) deltas.activeZoneMinutes = zone;
-  return deltas;
+  const zone = defined(
+    Object.fromEntries(ZONE_FIELDS.map((field) => [field, delta(periodA.activeZoneMinutes?.[field], periodB.activeZoneMinutes?.[field])])),
+  );
+  return defined({
+    stepsCountSum: delta(periodA.stepsCountSum, periodB.stepsCountSum),
+    distanceMillimetersSum: delta(periodA.distanceMillimetersSum, periodB.distanceMillimetersSum),
+    totalCaloriesKcalSum: delta(periodA.totalCaloriesKcalSum, periodB.totalCaloriesKcalSum),
+    activeMinutesSum: delta(periodA.activeMinutesSum, periodB.activeMinutesSum),
+    activeZoneMinutes: Object.keys(zone).length > 0 ? zone : undefined,
+  });
 }
 
 export async function comparePeriods(
@@ -195,25 +179,21 @@ export async function comparePeriods(
 
 async function rollUp(api: HealthApi, series: ActivitySeries, start: string, end: string): Promise<RollupPoint[]> {
   const range = closedOpenRange(start, end);
-  const points: RollupPoint[] = [];
-  let pageToken: string | undefined;
-  for (let page = 0; page < MAX_ACTIVITY_PAGES; page += 1) {
-    const body: Record<string, unknown> = {
-      range,
-      windowSizeDays: 1,
-      dataSourceFamily: WEARABLE_FAMILY,
-    };
-    if (pageToken) body.pageToken = pageToken;
-    const payload = await api.post(`/users/me/dataTypes/${series}/dataPoints:dailyRollUp`, body);
-    if (!isRecord(payload)) return points;
-    const batch = Array.isArray(payload.rollupDataPoints) ? payload.rollupDataPoints : [];
-    for (const point of batch) {
-      if (isRecord(point)) points.push(point as RollupPoint);
-    }
-    pageToken = typeof payload.nextPageToken === 'string' && payload.nextPageToken.length > 0 ? payload.nextPageToken : undefined;
-    if (!pageToken) return points;
-  }
-  throw new HealthCallError('http', 'paging stopped before the range was covered');
+  const points = await paginate(
+    (pageToken) => {
+      const body: Record<string, unknown> = {
+        range,
+        windowSizeDays: 1,
+        dataSourceFamily: WEARABLE_FAMILY,
+      };
+      if (pageToken) body.pageToken = pageToken;
+      return api.post(`/users/me/dataTypes/${series}/dataPoints:dailyRollUp`, body);
+    },
+    'rollupDataPoints',
+    MAX_ACTIVITY_PAGES,
+    'paging stopped before the range was covered',
+  );
+  return points.filter(isRecord) as RollupPoint[];
 }
 
 function civilDateOf(point: RollupPoint): string | undefined {
@@ -287,7 +267,18 @@ function hasSeries(day: ActivityDay, series: ActivitySeries): boolean {
   return day.totalCalories !== undefined;
 }
 
-function assignDelta(target: ActivityTotals, key: 'stepsCountSum' | 'distanceMillimetersSum' | 'totalCaloriesKcalSum' | 'activeMinutesSum', left: number | undefined, right: number | undefined): void {
-  if (left === undefined || right === undefined) return;
-  target[key] = right - left;
+const ZONE_FIELDS = ['sumInFatBurnHeartZone', 'sumInCardioHeartZone', 'sumInPeakHeartZone'] as const;
+
+function sum(values: Array<number | undefined>): number | undefined {
+  const present = values.filter((value): value is number => value !== undefined);
+  return present.length > 0 ? present.reduce((total, value) => total + value, 0) : undefined;
+}
+
+function delta(left: number | undefined, right: number | undefined): number | undefined {
+  return left === undefined || right === undefined ? undefined : right - left;
+}
+
+/** Drops undefined keys so absent sums stay absent in the result. */
+function defined<T extends object>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter((entry) => entry[1] !== undefined)) as T;
 }
