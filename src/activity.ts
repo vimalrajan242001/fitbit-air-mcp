@@ -43,18 +43,6 @@ export type ActivityResult = {
   authStopped?: true;
 };
 
-export type ActivityTotals = {
-  stepsCountSum?: number;
-  distanceMillimetersSum?: number;
-  totalCaloriesKcalSum?: number;
-  activeMinutesSum?: number;
-  activeZoneMinutes?: {
-    sumInFatBurnHeartZone?: number;
-    sumInCardioHeartZone?: number;
-    sumInPeakHeartZone?: number;
-  };
-};
-
 type RollupPoint = {
   civilStartTime?: { date?: Partial<CivilParts> };
   steps?: { countSum?: unknown };
@@ -69,8 +57,9 @@ export async function readDailyActivity(
   start: string,
   end: string,
   series: readonly ActivitySeries[] = ACTIVITY_SERIES,
+  maxDays = MAX_ACTIVITY_DAYS,
 ): Promise<ActivityResult> {
-  assertRange(start, end, MAX_ACTIVITY_DAYS);
+  assertRange(start, end, maxDays);
   const dates = eachCivilDate(start, end);
   const days = new Map<string, ActivityDay>(dates.map((date) => [date, { date }]));
   const missing: Missing[] = [];
@@ -122,59 +111,6 @@ export async function readDailyActivity(
   };
   if (authStopped) result.authStopped = true;
   return result;
-}
-
-/** Days per series that have a value, so sums over unequal coverage are not read as a change. */
-export function daysWithData(days: ActivityDay[]): Record<ActivitySeries, number> {
-  return Object.fromEntries(ACTIVITY_SERIES.map((name) => [name, days.filter((day) => hasSeries(day, name)).length])) as Record<ActivitySeries, number>;
-}
-
-export function activityTotals(days: ActivityDay[]): ActivityTotals {
-  const zone = defined(Object.fromEntries(ZONE_FIELDS.map((field) => [field, sum(days.map((day) => day.activeZoneMinutes?.[field]))])));
-  return defined({
-    stepsCountSum: sum(days.map((day) => day.steps?.countSum)),
-    distanceMillimetersSum: sum(days.map((day) => day.distance?.millimetersSum)),
-    totalCaloriesKcalSum: sum(days.map((day) => day.totalCalories?.kcalSum)),
-    activeMinutesSum: sum(days.flatMap((day) => day.activeMinutes?.byActivityLevel.map((level) => level.activeMinutesSum) ?? [])),
-    activeZoneMinutes: Object.keys(zone).length > 0 ? zone : undefined,
-  });
-}
-
-export function subtractTotals(periodA: ActivityTotals, periodB: ActivityTotals): ActivityTotals {
-  const zone = defined(
-    Object.fromEntries(ZONE_FIELDS.map((field) => [field, delta(periodA.activeZoneMinutes?.[field], periodB.activeZoneMinutes?.[field])])),
-  );
-  return defined({
-    stepsCountSum: delta(periodA.stepsCountSum, periodB.stepsCountSum),
-    distanceMillimetersSum: delta(periodA.distanceMillimetersSum, periodB.distanceMillimetersSum),
-    totalCaloriesKcalSum: delta(periodA.totalCaloriesKcalSum, periodB.totalCaloriesKcalSum),
-    activeMinutesSum: delta(periodA.activeMinutesSum, periodB.activeMinutesSum),
-    activeZoneMinutes: Object.keys(zone).length > 0 ? zone : undefined,
-  });
-}
-
-export async function comparePeriods(
-  api: HealthApi,
-  periodA: { start: string; end: string },
-  periodB: { start: string; end: string },
-): Promise<{
-  periodA: ActivityResult;
-  periodB: ActivityResult;
-  deltaMeaning: 'periodB minus periodA';
-  deltas: ActivityTotals;
-  daysWithData: { periodA: Record<ActivitySeries, number>; periodB: Record<ActivitySeries, number> };
-}> {
-  const [left, right] = await Promise.all([
-    readDailyActivity(api, periodA.start, periodA.end),
-    readDailyActivity(api, periodB.start, periodB.end),
-  ]);
-  return {
-    periodA: left,
-    periodB: right,
-    deltaMeaning: 'periodB minus periodA',
-    deltas: subtractTotals(activityTotals(left.days), activityTotals(right.days)),
-    daysWithData: { periodA: daysWithData(left.days), periodB: daysWithData(right.days) },
-  };
 }
 
 async function rollUp(api: HealthApi, series: ActivitySeries, start: string, end: string): Promise<RollupPoint[]> {
@@ -265,20 +201,4 @@ function hasSeries(day: ActivityDay, series: ActivitySeries): boolean {
   if (series === 'active-zone-minutes') return day.activeZoneMinutes !== undefined;
   if (series === 'active-minutes') return day.activeMinutes !== undefined;
   return day.totalCalories !== undefined;
-}
-
-const ZONE_FIELDS = ['sumInFatBurnHeartZone', 'sumInCardioHeartZone', 'sumInPeakHeartZone'] as const;
-
-function sum(values: Array<number | undefined>): number | undefined {
-  const present = values.filter((value): value is number => value !== undefined);
-  return present.length > 0 ? present.reduce((total, value) => total + value, 0) : undefined;
-}
-
-function delta(left: number | undefined, right: number | undefined): number | undefined {
-  return left === undefined || right === undefined ? undefined : right - left;
-}
-
-/** Drops undefined keys so absent sums stay absent in the result. */
-function defined<T extends object>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter((entry) => entry[1] !== undefined)) as T;
 }
