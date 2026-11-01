@@ -7,10 +7,21 @@ import { test } from 'node:test';
 import { SCOPES, TESTING_REFRESH_MS } from '../src/constants.js';
 import { HealthCallError } from '../src/errors.js';
 import { connectionStatus } from '../src/status.js';
-import { loginDeadline, writeTokenFile, type TokenFile } from '../src/tokens.js';
+import { loginDeadline, loginWarning, writeTokenFile, type TokenFile } from '../src/tokens.js';
 import { fakeHealthApi } from './fixture.js';
 
 const obtained = '2026-03-01T00:00:00.000Z';
+
+test('loginWarning appears only within 48 hours of the login deadline', () => {
+  const dueAt = Date.parse('2026-03-08T00:00:00.000Z');
+  const remote = { accessToken: 'a-sent', expiry: obtained, scopes: [], refreshObtainedAt: obtained };
+  const at = (ms: number) => loginWarning({ configDir: '/', remote, now: () => new Date(ms) });
+  assert.equal(at(dueAt - 49 * 60 * 60 * 1000), undefined);
+  assert.match(at(dueAt - 47 * 60 * 60 * 1000) ?? '', /2026-03-08T00:00:00\.000Z/);
+  const empty = mkdtempSync(join(tmpdir(), 'fitbit-air-warn-'));
+  assert.equal(loginWarning({ configDir: empty, now: () => new Date(dueAt) }), undefined);
+  rmSync(empty, { recursive: true, force: true });
+});
 
 function tokens(now: Date, expiryOffsetMs: number): TokenFile {
   return {

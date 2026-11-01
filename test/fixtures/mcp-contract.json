@@ -20,7 +20,7 @@
     },
     {
       "name": "daily_activity",
-      "description": "Daily wearable rollups for steps (countSum), distance (millimetersSum), active zone minutes, active minutes, and total calories (kcalSum). Dates are inclusive civil days, at most 7. A day with no wearable samples is missing, not zero. Values stay in the API units. With granularity \"week\" the range may be up to 91 days: it returns 7-day weeks from start with per-day averages and daysWithData (no per-day rows), plus a baseline of the median and 25th-75th percentile range over the last 28 days. Use it for trends and for comparing periods; describe values against the baseline, never as a score or diagnosis.",
+      "description": "Daily wearable rollups for steps (countSum), distance (millimetersSum, plus kilometers), active zone minutes, active minutes, and total calories (kcalSum). Dates are inclusive civil days, at most 7. A day with no wearable samples is missing, not zero. Other values stay in the API units. With granularity \"week\" the range may be up to 91 days: it returns 7-day weeks from start with per-day averages and daysWithData (no per-day rows), plus a baseline of the median and 25th-75th percentile range over the last 28 days. Use it for trends and for comparing periods; describe values against the baseline, never as a score or diagnosis.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -51,7 +51,7 @@
     },
     {
       "name": "sleep_nights",
-      "description": "Wearable sleep sessions whose civil end date falls in the inclusive range, at most 31 days. In-bed minutes come from the session interval. Asleep, stage minutes, and short awakenings come from the documented summary fields. Stage intervals are included only when detail is true and the range is one night. With granularity \"week\" the range may be up to 91 days: the longest session per date is the main sleep and the others are counted as naps; each 7-day week has average asleep and in-bed minutes, the median local bedtime, and its spread (25th-75th percentile, minutes), plus a 28-day baseline. Main sleep is wrong when a nap outlasts a broken night. This is not a Sleep Score and not a diagnosis.",
+      "description": "Wearable sleep sessions whose civil end date falls in the inclusive range, at most 31 days. In-bed minutes come from the session interval. inBedHours and hoursAsleep repeat those minutes in hours. Asleep, stage minutes, and short awakenings come from the documented summary fields. Stage intervals are included only when detail is true and the range is one night. With granularity \"week\" the range may be up to 91 days: the longest session per date is the main sleep and the others are counted as naps; each 7-day week has average asleep and in-bed minutes, the median local bedtime, and its spread (25th-75th percentile, minutes), plus a 28-day baseline. Main sleep is wrong when a nap outlasts a broken night. This is not a Sleep Score and not a diagnosis.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -138,6 +138,18 @@
       "title": "Today",
       "description": "Today in the account time zone: steps, active zone minutes, last night’s sleep summary, and last sync time. No tokens and no resting heart rate.",
       "mimeType": "application/json"
+    }
+  ],
+  "prompts": [
+    {
+      "name": "weekly_review",
+      "title": "Weekly review",
+      "description": "Review the last 7 full days of activity and sleep."
+    },
+    {
+      "name": "sleep_check",
+      "title": "Sleep check",
+      "description": "Compare last night with the week before it."
     }
   ]
 }

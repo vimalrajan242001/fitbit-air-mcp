@@ -14,7 +14,10 @@ export type SleepNight = {
   sourceDevice?: string;
   interval: Interval;
   inBedMinutes: number;
+  /** Minutes / 60, rounded to 0.01. */
+  inBedHours: number;
   minutesAsleep?: number;
+  hoursAsleep?: number;
   stageMinutes: Partial<Record<StageType, number>>;
   shortAwakeningCount: number;
   /** Documented ratio round((minutesAsleep / inBedMinutes) * 100). Not the in-app Sleep Score. */
@@ -77,10 +80,14 @@ export function summarizeSleepSession(session: unknown, options: { includeStages
     date,
     interval,
     inBedMinutes,
+    inBedHours: hours(inBedMinutes),
     stageMinutes: stageMinutes(summary?.stagesSummary),
     shortAwakeningCount: Array.isArray(sleep.shortAwakenings) ? sleep.shortAwakenings.length : 0,
   };
-  if (minutesAsleep !== undefined) night.minutesAsleep = minutesAsleep;
+  if (minutesAsleep !== undefined) {
+    night.minutesAsleep = minutesAsleep;
+    night.hoursAsleep = hours(minutesAsleep);
+  }
   if (minutesAsleep !== undefined && inBedMinutes > 0) {
     night.sleepEfficiencyPercent = Math.round((minutesAsleep / inBedMinutes) * 100);
   }
@@ -88,6 +95,10 @@ export function summarizeSleepSession(session: unknown, options: { includeStages
   if (typeof device === 'string' && device.length > 0) night.sourceDevice = device;
   if (options.includeStages && Array.isArray(sleep.stages)) night.stages = stageIntervals(sleep.stages);
   return night;
+}
+
+function hours(minutes: number): number {
+  return Math.round(minutes / 0.6) / 100;
 }
 
 function stageMinutes(stagesSummary: unknown): SleepNight['stageMinutes'] {

@@ -38,13 +38,13 @@ The env file and `tokens.json` live in `~/.config/fitbit-air-mcp/` (on Windows, 
 
 ## This slice
 
-Tools: `connection_status`, `sync_status`, `daily_activity`, `sleep_nights`, `recovery_day`, `exercise_sessions`. Resource: `fitbit://today`. `compare_periods` was removed; `granularity: "week"` covers trends and comparisons.
+Tools: `connection_status`, `sync_status`, `daily_activity`, `sleep_nights`, `recovery_day`, `exercise_sessions`. Resource: `fitbit://today`. Prompts: `weekly_review`, `sleep_check`, each with the today snapshot embedded. `compare_periods` was removed; `granularity: "week"` covers trends and comparisons.
 
 `granularity: "week"` (in `src/trends.ts`) accepts up to 91 days. Activity is read in 14-day chunks (35 calls for 91 days, under the Workers free-plan 50-subrequest cap) and returned as 7-day weeks from `start` with per-day averages and `daysWithData`, no per-day rows. Sleep takes the longest session per civil end date as the main sleep and counts the rest as naps; each week has average asleep and in-bed minutes, the median local bedtime, and its 25th-75th percentile spread. Both add a baseline: median and 25th-75th percentile over the last 28 days of the range. It is descriptive, not a score.
 
 Activity uses `POST /users/me/dataTypes/{type}/dataPoints:dailyRollUp` with `windowSizeDays: 1`, a closed-open civil range, and `dataSourceFamily` `users/me/dataSourceFamilies/google-wearables`. Types: `steps`, `distance`, `active-zone-minutes`, `active-minutes`, `total-calories`. Each request is at most 7 days because `active-minutes` and `total-calories` reject ranges over 14.
 
-Documented rollup fields, with no unit conversion:
+Documented rollup fields, kept in API units (the result adds `distance.kilometers`, and sleep adds `inBedHours` and `hoursAsleep`):
 
 - `steps.countSum`
 - `distance.millimetersSum`

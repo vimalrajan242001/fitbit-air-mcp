@@ -7,7 +7,8 @@ import { isRecord, readFinite, readInt } from './parse.js';
 export type ActivityDay = {
   date: string;
   steps?: { countSum: number };
-  distance?: { millimetersSum: number };
+  /** kilometers is millimetersSum / 1e6, rounded to 0.01. */
+  distance?: { millimetersSum: number; kilometers: number };
   activeZoneMinutes?: {
     sumInFatBurnHeartZone?: number;
     sumInCardioHeartZone?: number;
@@ -46,7 +47,10 @@ const SERIES = {
   } satisfies SeriesSpec<'steps'>,
   distance: {
     field: 'distance',
-    parse: (rollup) => optional(readInt(rollup.millimetersSum), (millimetersSum) => ({ millimetersSum })),
+    parse: (rollup) => optional(readInt(rollup.millimetersSum), (millimetersSum) => ({
+      millimetersSum,
+      kilometers: Math.round(millimetersSum / 10_000) / 100,
+    })),
     unreadable: 'distance rollup had no millimetersSum',
   } satisfies SeriesSpec<'distance'>,
   'active-zone-minutes': {
