@@ -3,6 +3,8 @@
 Review date: 2026-10-29. Covers `src/`, `scripts/`, `README.md`, `docs/context.md`, CI, agent config files, and `package.json`.
 Baseline: `npm run check` passes (20/20 tests, typecheck, build). `npm audit`: 0 vulnerabilities. `npm run secret-scan`: clean.
 
+Security review: 2026-10-31. Adds the Cloudflare Worker (`src/worker.ts`, `wrangler.toml`) and the deploy job. Items 18–23 are new; #1, #2, #3, and #16 were re-checked and are still open. `npm audit`: 0 vulnerabilities. Secret scan and a git-history grep for client secrets and Google tokens: clean. The repo is public.
+
 ## Priority key
 
 | Priority | Meaning |
@@ -33,6 +35,12 @@ Baseline: `npm run check` passes (20/20 tests, typecheck, build). `npm audit`: 0
 | 15 | P3 | Maintainability | Small duplications: civil date formatting, server version, sums | XS |
 | 16 | P3 | Tooling | CI: actions pinned by tag, double runs on PR pushes | XS |
 | 17 | P3 | Docs | README inaccuracies | XS |
+| 18 | P1 | Security (Worker auth) | Worker accepts any Google account | S |
+| 19 | P1 | Security (Worker auth) | Open client registration allows consent phishing | S |
+| 20 | P2 | Security (Worker abuse) | No rate limit on `/register` | XS |
+| 21 | P3 | Security (local) | Local `/mcp` and the login loopback trust every local process | — |
+| 22 | P3 | Security (logging) | Worker logs and tool errors can carry codes and local paths | XS |
+| 23 | P3 | Security (CI) | Deploy job holds the Cloudflare token behind tag-pinned actions | XS |
 
 Effort: XS < 15 min, S < 1 h.
 
@@ -48,7 +56,9 @@ Effort: XS < 15 min, S < 1 h.
 
 **Problem:** The only protection on `/mcp` is `localhostHostValidation` plus `localhostOriginValidation`. Both tunnel scripts rewrite the Host header to `127.0.0.1:8788`, which gets past the Host check. Non-browser clients send no `Origin`, which gets past the Origin check. The README presents this as a supported mode for ChatGPT and other machines. Result: anyone who learns the tunnel URL can call `sync_status`, `sleep_nights`, `daily_activity`, and `connection_status`, and the server pays for each call with your token.
 
-**Fix (smallest):** Add a random secret to the path, e.g. `/mcp/<32+ random chars>`, read from the env file as `MCP_PATH_SECRET`. Compare with `crypto.timingSafeEqual`. A secret path works with every client, including ChatGPT connectors, which accept only OAuth or no auth and so can't send a static bearer header. Clients that do support headers could also use an `Authorization: Bearer` check.
+**Re-checked 2026-10-31:** Still open. The library code confirms that a request with no `Origin` header passes. Now that the Worker (README "Mode 4") is deployed with OAuth, the smallest fix is to delete the tunnel path: the `ngrok` and `tunnel` scripts, `scripts/start-tunnel.ps1`, and README "Mode 2".
+
+**Fix (if tunnels stay):** Add a random secret to the path, e.g. `/mcp/<32+ random chars>`, read from the env file as `MCP_PATH_SECRET`. Compare with `crypto.timingSafeEqual`. A secret path works with every client, including ChatGPT connectors, which accept only OAuth or no auth and so can't send a static bearer header. Clients that do support headers could also use an `Authorization: Bearer` check.
 
 ### 2. P0 — Personal ngrok domain committed in `package.json`
 
@@ -195,11 +205,65 @@ Effort: XS < 15 min, S < 1 h.
 **Where:** `.github/workflows/check.yml`.
 
 - `on: [push, pull_request]` runs twice for PR branches. Limit `push` to `main`.
-- Actions are pinned by tag (`@v4`, `@v2`); pin to commit SHAs for supply-chain safety.
+- Actions are pinned by tag (`@v4`, `@v2`); pin to commit SHAs for supply-chain safety. The deploy job now makes this a security item: see #23.
 
 ### 17. P3 — README inaccuracies
 
 - The Mode 1 `envFile` setting is unused: the server reads `~/.config/fitbit-air-mcp/env` itself.
+
+---
+
+## Security: Cloudflare Worker (2026-10-31)
+
+### 18. P1 — Worker accepts any Google account
+
+**Where:** `src/worker.ts` `OWNER` and the `/callback` branch (`completeAuthorization`).
+
+**Problem:** Every grant is stored under the fixed user `'owner'`, and the code never checks which Google account signed in. Only the Google Cloud console blocks strangers: in Testing mode, only listed test users can sign in. If the OAuth app is published, or more test users are added, anyone can use this Worker to read their own data under your app's name and quota. They cannot see your data.
+
+**Fix:** After `exchangeCode`, call `/users/me/identity` with the new access token and compare the result to an `OWNER_HEALTH_USER_ID` Worker secret. Refuse before `completeAuthorization` if it does not match.
+
+### 19. P1 — Open client registration allows consent phishing
+
+**Where:** `src/worker.ts` `clientRegistrationEndpoint: '/register'`.
+
+**Problem:** Anyone can register a client whose `redirect_uri` points to their own server, then send you an `/authorize` link. The consent page names the destination host, as the library requires, and Google's consent screen follows. If you click through both, the attacker gets an MCP token, refreshable for 7 days, for your data.
+
+**Fix:** Add a `clientRegistrationCallback` that only accepts redirect hosts you use (for example `claude.ai`, `chatgpt.com`, and loopback).
+
+### 20. P2 — No rate limit on `/register`
+
+**Where:** `src/worker.ts`, Cloudflare zone settings.
+
+**Problem:** Registration is unauthenticated. A script can write many client records to `OAUTH_KV`, each kept for the 90-day registration TTL. That costs KV writes and storage, and it adds no access.
+
+**Fix:** Add a Cloudflare rate-limiting rule on `POST /register`. #19 also reduces it.
+
+## Security: local and operational (2026-10-31)
+
+### 21. P3 — Local `/mcp` and the login loopback trust every local process
+
+**Where:** `src/http.ts`, `src/oauth.ts` `waitForCallback`.
+
+**Problem:** `127.0.0.1:8788/mcp` has no auth, so any process or user on the same machine can read your health data. Any local process can also send a wrong `state` to `127.0.0.1:8787` and abort a login in progress. This is acceptable on a single-user machine.
+
+**Fix:** None needed for a personal machine. On a shared machine, use the Worker instead.
+
+### 22. P3 — Worker logs and tool errors can carry codes and local paths
+
+**Where:** `wrangler.toml` `[observability]`, `src/status.ts` (`missing[].reason`).
+
+**Problem:** With Workers observability on, the logged `/callback` request URL can include Google's one-time authorization code. The code cannot be used without the PKCE verifier and the client secret, so the risk is low. Separately, `connection_status` can return messages that include the local env-file path to the model.
+
+**Fix:** Optional. Turn off request-URL logging, or accept it as is. Use a fixed reason such as `env file missing` in place of the full path.
+
+### 23. P3 — Deploy job holds the Cloudflare token behind tag-pinned actions
+
+**Where:** `.github/workflows/check.yml` `deploy` job.
+
+**Problem:** `CLOUDFLARE_API_TOKEN` is used in a job that runs `actions/checkout@v4` and `actions/setup-node@v4` by tag. A moved tag would run new code before the deploy step. `checkout` also leaves `GITHUB_TOKEN` in `.git/config` while `npm ci` install scripts run.
+
+**Fix:** Pin actions to commit SHAs. Set `persist-credentials: false` on both checkouts.
 
 ---
 
@@ -209,9 +273,15 @@ Effort: XS < 15 min, S < 1 h.
 - Secrets: tokens redacted by key, `sanitizeText` on error messages, `0600` token file, `.gitignore` covers `tokens.json`, secret scan and gitleaks in CI.
 - `macAddress` is dropped by the allowlist in `toSyncDevice` and again by `redact`.
 - No calls to `api.fitbit.com`; `healthUrl` refuses other hosts.
+- Worker: PKCE S256 to Google; the consent form handle is single-use and bound to the browser; the library sends no-framing headers; every client-controlled string on the consent page is escaped; error responses are `text/plain`.
+- Worker: `apiHandler` strips the Google refresh token before the MCP server sees it; grant props are encrypted in KV; Worker secrets go through `wrangler secret`.
+- Date inputs are checked against `YYYY-MM-DD` and a real calendar day before they reach the sleep `filter` string, so the filter cannot be injected. Activity series names come from a fixed list.
+- `openSystemBrowser` on Windows: the URL is percent-encoded, so `cmd start` cannot be used to inject commands.
+- CI: `permissions: contents: read`; the commit message reaches the shell through `env`, so it cannot inject script; deploy runs only on pushes to `main`.
 - `npm outdated`: only TypeScript 7 and `@types/node` 26 are newer. `@types/node` 22 matches `engines.node >=22`, so leave it.
 
 ## Not verified
 
+- **Live settings (2026-10-31 review):** whether the Google OAuth app is in Testing mode and who its test users are (#18), Cloudflare account settings and secret values, and the behavior of the deployed Worker. The review was code-only.
 - **API call shapes against Google's docs:** dailyRollUp body or query `pageToken`, the sleep `filter` syntax (`civil_end_time` with a bare date literal), whether int64 values come back as strings, and the location of the `ACCOUNT_NOT_LINKED` reason.
 - **Test contents:** only the pass count was confirmed. Coverage of `compare_periods`, the 401 retry path, and the auth-stop branch is unknown.
