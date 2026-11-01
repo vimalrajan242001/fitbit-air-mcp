@@ -68,7 +68,7 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
     'sleep_nights',
     {
       description:
-        'Wearable sleep sessions whose civil end date falls in the inclusive range. In-bed minutes come from the session interval. Asleep, stage minutes, and short awakenings come from the documented summary fields. Stage intervals are included only when detail is true and the range is one night. This is not a Sleep Score and not a diagnosis.',
+        'Wearable sleep sessions whose civil end date falls in the inclusive range, at most 31 days. In-bed minutes come from the session interval. Asleep, stage minutes, and short awakenings come from the documented summary fields. Stage intervals are included only when detail is true and the range is one night. This is not a Sleep Score and not a diagnosis.',
       inputSchema: z.object({
         start: dateField.describe('Inclusive civil start date, YYYY-MM-DD'),
         end: dateField.optional().describe('Inclusive civil end date, YYYY-MM-DD. Defaults to start.'),

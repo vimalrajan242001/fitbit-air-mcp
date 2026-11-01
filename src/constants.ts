@@ -26,6 +26,9 @@ export const TESTING_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 /** active-minutes and total-calories reject ranges over 14 days. Tools stay at 7. */
 export const MAX_ACTIVITY_DAYS = 7;
 
+/** Keeps a sleep read to a few pages and a result the model can hold. */
+export const MAX_SLEEP_DAYS = 31;
+
 /** Sleep and exercise pages are capped at 25 sessions. */
 export const SLEEP_PAGE_SIZE = 25;
 export const MAX_SLEEP_PAGES = 25;

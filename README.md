@@ -188,9 +188,6 @@ npm run check
 2. Node.js unit and integration tests (20 tests covering activity, sleep, devices, auth, harness, and secrets).
 3. Production build (`tsc -p tsconfig.build.json`).
 
-> [!TIP]
-> If `test/http.test.ts` fails with `EADDRINUSE: 127.0.0.1:8788`, stop any running `npm start` process or close Cursor before running checks.
-
 ---
 
 ## Troubleshooting

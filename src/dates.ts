@@ -64,13 +64,13 @@ export function closedOpenRange(start: string, endInclusive: string): { start: C
   };
 }
 
-export function assertActivityRange(start: string, end: string, maxDays: number): void {
+export function assertRange(start: string, end: string, maxDays: number): void {
   const days = inclusiveDayCount(start, end);
   if (days < 1) {
     throw new Error('The end date is before the start date.');
   }
   if (days > maxDays) {
-    throw new Error(`This range is ${days} days. Activity reads cover at most ${maxDays} days.`);
+    throw new Error(`This range is ${days} days. This read covers at most ${maxDays} days.`);
   }
 }
 

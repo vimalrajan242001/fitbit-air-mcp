@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises';
+
 import { HEALTH_API_BASE } from './constants.js';
 import { HealthCallError, errorStatusName, findReason, isRecord, sanitizeText } from './errors.js';
 import { getAccessToken, type TokenDeps } from './tokens.js';
@@ -6,6 +8,8 @@ export type HealthApi = {
   get(path: string): Promise<unknown>;
   post(path: string, body: unknown): Promise<unknown>;
 };
+
+const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 export function healthUrl(path: string): URL {
   if (!path.startsWith('/')) {
@@ -35,12 +39,19 @@ async function request(deps: TokenDeps, method: 'GET' | 'POST', path: string, bo
     Accept: 'application/json',
     Authorization: `Bearer ${token}`,
   };
-  const init: RequestInit = { method, headers, signal: AbortSignal.timeout(30_000) };
+  const init: RequestInit = { method, headers };
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  const response = await deps.fetchImpl(healthUrl(path), init);
+  let response = await deps.fetchImpl(healthUrl(path), { ...init, signal: AbortSignal.timeout(30_000) });
+  // One retry for a transient failure, after Retry-After seconds (capped) or 1 s.
+  if (TRANSIENT_STATUSES.has(response.status)) {
+    await response.body?.cancel();
+    const seconds = Number(response.headers.get('Retry-After') ?? NaN);
+    await delay(Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds, 5) * 1000 : 1000);
+    response = await deps.fetchImpl(healthUrl(path), { ...init, signal: AbortSignal.timeout(30_000) });
+  }
   // A remote token is refreshed by the MCP client, so a 401 goes back to it.
   if (response.status === 401 && allowRetry && !deps.remote) {
     await getAccessToken({ ...deps, force: true });

@@ -1,5 +1,5 @@
-import { MAX_SLEEP_PAGES, SLEEP_PAGE_SIZE, WEARABLE_FAMILY } from './constants.js';
-import { addCivilDays, eachCivilDate, inclusiveDayCount, parseDurationSeconds, readInt } from './dates.js';
+import { MAX_SLEEP_DAYS, MAX_SLEEP_PAGES, SLEEP_PAGE_SIZE, WEARABLE_FAMILY } from './constants.js';
+import { addCivilDays, assertRange, eachCivilDate, parseDurationSeconds, readInt } from './dates.js';
 import { HealthCallError, isRecord, type Missing } from './errors.js';
 import type { HealthApi } from './health.js';
 
@@ -35,8 +35,7 @@ export type SleepResult = {
 };
 
 export async function readSleepNights(api: HealthApi, start: string, end: string, detail: boolean): Promise<SleepResult> {
-  const days = inclusiveDayCount(start, end);
-  if (days < 1) throw new Error('The end date is before the start date.');
+  assertRange(start, end, MAX_SLEEP_DAYS);
   const missing: Missing[] = [];
   const singleNight = start === end;
   if (detail && !singleNight) {

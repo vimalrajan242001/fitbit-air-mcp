@@ -61,6 +61,26 @@ test('a remote token is used as-is, never touches the token file, and a 401 is n
   }
 });
 
+test('a 503 is retried once after Retry-After, a second 503 is not', async () => {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls += 1;
+    if (calls === 1) return new Response('', { status: 503, headers: { 'Retry-After': '0' } });
+    return new Response(JSON.stringify({ ok: true }));
+  }) as typeof fetch;
+  const api = createHealthApi({ configDir: '/nonexistent', fetchImpl, now: () => new Date(), remote });
+  assert.deepEqual(await api.get('/users/me/identity'), { ok: true });
+  assert.equal(calls, 2);
+
+  calls = 0;
+  const failing = (async () => {
+    calls += 1;
+    return new Response('', { status: 503, headers: { 'Retry-After': '0' } });
+  }) as typeof fetch;
+  await assert.rejects(createHealthApi({ configDir: '/nonexistent', fetchImpl: failing, now: () => new Date(), remote }).get('/users/me/identity'));
+  assert.equal(calls, 2);
+});
+
 test('connection_status reports from the remote token when there is no token file', async () => {
   const api = { get: async () => ({}), post: async () => ({}) };
   const status = await connectionStatus('/nonexistent', api, new Date('2026-03-01T00:30:00.000Z'), remote);
