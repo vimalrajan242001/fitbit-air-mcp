@@ -20,6 +20,8 @@ The band syncs to the Google Health mobile app. This MCP server communicates wit
 | `daily_activity` | Steps, distance, active zone minutes, active minutes, and total calories for up to 7 civil days |
 | `sleep_nights` | In-bed and asleep minutes, stage minutes, and short awakenings |
 | `compare_periods` | Two daily-activity ranges, their totals, and the deltas |
+| `recovery_day` | Resting heart rate, daily HRV, and overnight SpO2 for up to 31 civil days |
+| `exercise_sessions` | Workouts with type, duration, and summary metrics for up to 31 days, no GPS |
 
 | Resource | What it returns |
 | --- | --- |

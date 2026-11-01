@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { HEALTH_API_BASE } from './constants.js';
+import { HEALTH_API_BASE, SLEEP_PAGE_SIZE, WEARABLE_FAMILY } from './constants.js';
 import { HealthCallError, errorStatusName, findReason, isRecord, sanitizeText } from './errors.js';
 import { getAccessToken, type TokenDeps } from './tokens.js';
 
@@ -75,6 +75,20 @@ export async function paginate(fetchPage: (pageToken?: string) => Promise<unknow
     if (!pageToken) return items;
   }
   throw new HealthCallError('http', coverageMessage);
+}
+
+/** Pages `dataPoints:reconcile` for one data type from the wearable family. */
+export function reconcile(api: HealthApi, dataType: string, filter: string, maxPages: number, coverageMessage: string): Promise<unknown[]> {
+  return paginate(
+    (pageToken) => {
+      const params = new URLSearchParams({ dataSourceFamily: WEARABLE_FAMILY, pageSize: String(SLEEP_PAGE_SIZE), filter });
+      if (pageToken) params.set('pageToken', pageToken);
+      return api.get(`/users/me/dataTypes/${dataType}/dataPoints:reconcile?${params.toString()}`);
+    },
+    'dataPoints',
+    maxPages,
+    coverageMessage,
+  );
 }
 
 export async function readHealthJson(response: Response): Promise<unknown> {

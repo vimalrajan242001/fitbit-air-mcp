@@ -4,8 +4,10 @@ import { z } from 'zod';
 import { comparePeriods, readDailyActivity } from './activity.js';
 import { SERVER_VERSION } from './constants.js';
 import { readSyncStatus } from './devices.js';
+import { readExerciseSessions } from './exercise.js';
 import { createHealthApi } from './health.js';
 import { defaultConfigDir } from './paths.js';
+import { readRecoveryDays } from './recovery.js';
 import { redact, textResult } from './redact.js';
 import { readSleepNights } from './sleep.js';
 import { connectionStatus } from './status.js';
@@ -71,6 +73,32 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
       }),
     },
     run(({ start, end, detail }) => readSleepNights(api, start, end ?? start, detail ?? false)),
+  );
+
+  server.registerTool(
+    'recovery_day',
+    {
+      description:
+        'Daily wearable recovery values for an inclusive civil range, at most 31 days: resting heart rate (beatsPerMinute), heart rate variability (average RMSSD and deep-sleep RMSSD in milliseconds, non-REM heart rate, entropy), and overnight oxygen saturation (average, confidence bounds, and standard deviation in percent). A day with no samples is missing, not zero. Values stay in the API units. Descriptive only: not a score and not a diagnosis.',
+      inputSchema: z.object({
+        start: dateField.describe('Inclusive civil start date, YYYY-MM-DD'),
+        end: dateField.optional().describe('Inclusive civil end date, YYYY-MM-DD. Defaults to start.'),
+      }),
+    },
+    run(({ start, end }) => readRecoveryDays(api, start, end ?? start)),
+  );
+
+  server.registerTool(
+    'exercise_sessions',
+    {
+      description:
+        'Wearable exercise sessions whose civil start date falls in the inclusive range, at most 31 days: type, name, interval, duration and active minutes, and summary metrics (steps, calories in kcal, distance and elevation gain in millimeters, average heart rate, active zone minutes, average speed and pace). No GPS or route data.',
+      inputSchema: z.object({
+        start: dateField.describe('Inclusive civil start date, YYYY-MM-DD'),
+        end: dateField.optional().describe('Inclusive civil end date, YYYY-MM-DD. Defaults to start.'),
+      }),
+    },
+    run(({ start, end }) => readExerciseSessions(api, start, end ?? start)),
   );
 
   server.registerTool(
