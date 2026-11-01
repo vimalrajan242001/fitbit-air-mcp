@@ -18,6 +18,7 @@ import { HealthCallError } from './errors.js';
 import { exchangeCode, googleAuthorizeUrl } from './oauth.js';
 import { createFitbitServer } from './server.js';
 import { refreshAccessToken, type TokenFile } from './tokens.js';
+import { clientRegistrationCallback, ownerRefusal } from './worker-auth.js';
 
 export type Env = {
   OAUTH_KV: KVNamespace;
@@ -28,6 +29,8 @@ export type Env = {
   PUBLIC_URL: string;
   /** Signs the remembered-consent cookie. 32+ random chars. */
   CONSENT_SECRET: string;
+  /** healthUserId of the one Google account allowed to sign in. */
+  OWNER_HEALTH_USER_ID?: string;
 };
 
 /** One person's server: every grant belongs to the same user. */
@@ -100,6 +103,8 @@ export const defaultHandler = {
         } catch (error) {
           return text(error instanceof Error ? error.message : 'Google sign-in failed.', 502);
         }
+        const refusal = await ownerRefusal(tokens, env.OWNER_HEALTH_USER_ID, fetchImpl);
+        if (refusal) return text(refusal, 403);
         const { redirectTo } = await oauth.completeAuthorization({
           request: original,
           userId: OWNER,
@@ -155,6 +160,7 @@ export default {
       authorizeEndpoint: '/authorize',
       tokenEndpoint: '/token',
       clientRegistrationEndpoint: '/register',
+      clientRegistrationCallback,
       // Google Testing-mode refresh tokens last 7 days, so ours do too.
       refreshTokenTTL: TESTING_REFRESH_MS / 1000,
       resourceMetadata: { resource: `${env.PUBLIC_URL}/mcp`, resource_name: 'Fitbit Air' },

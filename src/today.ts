@@ -37,9 +37,7 @@ export async function readToday(api: HealthApi, now: Date): Promise<TodaySnapsho
   }
 
   const activity = await readDailyActivity(api, date, date, ['steps', 'active-zone-minutes']);
-  if (activity.missing.some((entry) => entry.reason === 'phone setup unfinished' || entry.reason === 'no local token file' || entry.reason === 'login due')) {
-    return { timeZone, date, missing: activity.missing };
-  }
+  if (activity.authStopped) return { timeZone, date, missing: activity.missing };
   const sleep = await readSleepNights(api, date, date, false);
   const sync = await readSyncStatus(api);
   const day = activity.days.find((entry) => entry.date === date);
