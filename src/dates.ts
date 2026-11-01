@@ -96,6 +96,17 @@ export function civilToday(timeZone: string, now: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Civil date from a documented civil time, else from the UTC time plus its offset. */
+export function civilDateOf(civil: unknown, time: unknown, utcOffset: unknown): string | null {
+  const date = civil && typeof civil === 'object' ? (civil as { date?: Partial<CivilParts> }).date : undefined;
+  if (typeof date?.year === 'number' && typeof date.month === 'number' && typeof date.day === 'number') {
+    return formatCivilDate({ year: date.year, month: date.month, day: date.day });
+  }
+  if (typeof time !== 'string') return null;
+  const shifted = new Date(Date.parse(time) + (parseDurationSeconds(utcOffset) ?? 0) * 1000);
+  return Number.isNaN(shifted.getTime()) ? null : shifted.toISOString().slice(0, 10);
+}
+
 /** Google duration strings such as `0s` or `-14400s`. */
 export function parseDurationSeconds(value: unknown): number | undefined {
   if (typeof value !== 'string') return undefined;
