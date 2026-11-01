@@ -57,8 +57,9 @@ export async function readDailyActivity(
   start: string,
   end: string,
   series: readonly ActivitySeries[] = ACTIVITY_SERIES,
+  maxDays = MAX_ACTIVITY_DAYS,
 ): Promise<ActivityResult> {
-  assertRange(start, end, MAX_ACTIVITY_DAYS);
+  assertRange(start, end, maxDays);
   const dates = eachCivilDate(start, end);
   const days = new Map<string, ActivityDay>(dates.map((date) => [date, { date }]));
   const missing: Missing[] = [];

@@ -12,7 +12,7 @@ test('percentile interpolates between ranks', () => {
   assert.equal(percentile([10], 0.25), 10);
 });
 
-test('weekly activity reads 7 days at a time and averages only days with data', async () => {
+test('weekly activity reads 14 days at a time and averages only days with data', async () => {
   const api = fakeHealthApi(async (_method, path, body) => {
     if (!path.includes('/steps/')) return { rollupDataPoints: [] };
     const { start, end } = (body as RangeBody).range;
@@ -27,21 +27,23 @@ test('weekly activity reads 7 days at a time and averages only days with data', 
         }),
     };
   });
-  const result = await readActivityWeeks(api, '2026-07-01', '2026-07-10');
-  assert.equal(api.calls.length, 10, 'two 7-day chunks of five series');
+  const result = await readActivityWeeks(api, '2026-07-01', '2026-07-17');
+  assert.equal(api.calls.length, 10, 'two 14-day chunks of five series');
   assert.deepEqual(
     result.weeks.map((week) => [week.start, week.end]),
     [
       ['2026-07-01', '2026-07-07'],
-      ['2026-07-08', '2026-07-10'],
+      ['2026-07-08', '2026-07-14'],
+      ['2026-07-15', '2026-07-17'],
     ],
   );
   assert.equal(result.weeks[0]!.daysWithData.steps, 6);
   assert.equal(result.weeks[0]!.dailyAverage.steps, Math.round(((1 + 2 + 4 + 5 + 6 + 7) * 1000) / 6));
-  assert.equal(result.weeks[1]!.dailyAverage.steps, 9000);
+  assert.equal(result.weeks[1]!.dailyAverage.steps, 11000);
+  assert.equal(result.weeks[2]!.dailyAverage.steps, 16000);
   assert.equal(result.weeks[0]!.dailyAverage.distanceMillimeters, undefined);
   assert.equal(result.baseline.start, '2026-07-01');
-  assert.deepEqual(result.baseline.steps, { median: 6000, typicalRange: [4000, 8000], daysWithData: 9 });
+  assert.deepEqual(result.baseline.steps, { median: 9500, typicalRange: [5750, 13250], daysWithData: 16 });
   assert.equal(result.missing.length, 0);
   assert.equal(JSON.stringify(result).includes('"days"'), false);
 });

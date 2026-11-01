@@ -1,5 +1,5 @@
-import { readDailyActivity, type ActivityDay } from './activity.js';
-import { BASELINE_DAYS, MAX_ACTIVITY_DAYS, MAX_TREND_DAYS, WEARABLE_FAMILY } from './constants.js';
+import { ACTIVITY_SERIES, readDailyActivity, type ActivityDay } from './activity.js';
+import { BASELINE_DAYS, MAX_ROLLUP_DAYS, MAX_TREND_DAYS, WEARABLE_FAMILY } from './constants.js';
 import { addCivilDays, assertRange, parseDurationSeconds } from './dates.js';
 import type { Missing } from './errors.js';
 import type { HealthApi } from './health.js';
@@ -17,15 +17,15 @@ const ACTIVITY_METRICS = {
 
 type ActivityMetric = keyof typeof ACTIVITY_METRICS;
 
-/** Daily activity grouped into 7-day weeks from `start`, read 7 days at a time. */
+/** Daily activity grouped into 7-day weeks from `start`, read 14 days at a time. */
 export async function readActivityWeeks(api: HealthApi, start: string, end: string) {
   assertRange(start, end, MAX_TREND_DAYS);
   const days: ActivityDay[] = [];
   const missing = new Map<string, Missing>();
   let authStopped = false;
-  for (let chunkStart = start; chunkStart <= end && !authStopped; chunkStart = addCivilDays(chunkStart, MAX_ACTIVITY_DAYS)) {
-    const chunkEnd = minDate(addCivilDays(chunkStart, MAX_ACTIVITY_DAYS - 1), end);
-    const chunk = await readDailyActivity(api, chunkStart, chunkEnd);
+  for (let chunkStart = start; chunkStart <= end && !authStopped; chunkStart = addCivilDays(chunkStart, MAX_ROLLUP_DAYS)) {
+    const chunkEnd = minDate(addCivilDays(chunkStart, MAX_ROLLUP_DAYS - 1), end);
+    const chunk = await readDailyActivity(api, chunkStart, chunkEnd, ACTIVITY_SERIES, MAX_ROLLUP_DAYS);
     days.push(...chunk.days);
     // Per-day gaps show up as daysWithData; only whole-series failures are listed.
     for (const entry of chunk.missing) if (!entry.date) missing.set(`${entry.series}|${entry.reason}`, entry);

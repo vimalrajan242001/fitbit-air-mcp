@@ -29,6 +29,9 @@ export const TESTING_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 /** active-minutes and total-calories reject ranges over 14 days. Tools stay at 7. */
 export const MAX_ACTIVITY_DAYS = 7;
 
+/** Weekly reads use the full 14-day rollup range: 7 chunks of 5 series stays under the Workers free-plan 50 subrequests. */
+export const MAX_ROLLUP_DAYS = 14;
+
 /** Keeps a sleep read to a few pages and a result the model can hold. */
 export const MAX_SLEEP_DAYS = 31;
 
