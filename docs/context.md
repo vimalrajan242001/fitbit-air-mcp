@@ -38,11 +38,11 @@ The env file and `tokens.json` live in `~/.config/fitbit-air-mcp/` (on Windows, 
 
 ## This slice
 
-Tools: `connection_status`, `sync_status`, `daily_activity`, `sleep_nights`, `compare_periods`. Resource: `fitbit://today`.
+Tools: `connection_status`, `sync_status`, `daily_activity`, `sleep_nights`, `compare_periods`. Resource: `fitbit://today`. Prompts: `weekly_review`, `sleep_check`, each with the today snapshot embedded.
 
 Activity uses `POST /users/me/dataTypes/{type}/dataPoints:dailyRollUp` with `windowSizeDays: 1`, a closed-open civil range, and `dataSourceFamily` `users/me/dataSourceFamilies/google-wearables`. Types: `steps`, `distance`, `active-zone-minutes`, `active-minutes`, `total-calories`. Each request is at most 7 days because `active-minutes` and `total-calories` reject ranges over 14.
 
-Documented rollup fields, with no unit conversion:
+Documented rollup fields, kept in API units (the result adds `distance.kilometers`, and sleep adds `inBedHours` and `hoursAsleep`):
 
 - `steps.countSum`
 - `distance.millimetersSum`

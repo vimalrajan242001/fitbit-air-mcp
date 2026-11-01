@@ -24,7 +24,8 @@ export type ActivitySeries = (typeof ACTIVITY_SERIES)[number];
 export type ActivityDay = {
   date: string;
   steps?: { countSum: number };
-  distance?: { millimetersSum: number };
+  /** kilometers is millimetersSum / 1e6, rounded to 0.01. */
+  distance?: { millimetersSum: number; kilometers: number };
   activeZoneMinutes?: {
     sumInFatBurnHeartZone?: number;
     sumInCardioHeartZone?: number;
@@ -220,7 +221,7 @@ function applyPoint(day: ActivityDay, series: ActivitySeries, point: RollupPoint
       missing.push({ date: day.date, series, reason: 'distance rollup had no millimetersSum' });
       return;
     }
-    day.distance = { millimetersSum };
+    day.distance = { millimetersSum, kilometers: Math.round(millimetersSum / 10_000) / 100 };
     return;
   }
   if (series === 'total-calories') {

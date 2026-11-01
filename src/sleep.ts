@@ -19,7 +19,10 @@ export type SleepNight = {
   sourceDevice?: string;
   interval: { startTime: string; endTime: string; startUtcOffset?: string; endUtcOffset?: string };
   inBedMinutes: number;
+  /** Minutes / 60, rounded to 0.01. */
+  inBedHours: number;
   minutesAsleep?: number;
+  hoursAsleep?: number;
   stageMinutes: Partial<Record<StageType, number>>;
   shortAwakeningCount: number;
   /** Documented ratio round((minutesAsleep / inBedMinutes) * 100). Not the in-app Sleep Score. */
@@ -107,10 +110,14 @@ export function summarizeSleepSession(session: unknown, options: { includeStages
       ...(typeof interval.endUtcOffset === 'string' ? { endUtcOffset: interval.endUtcOffset } : {}),
     },
     inBedMinutes,
+    inBedHours: hours(inBedMinutes),
     stageMinutes,
     shortAwakeningCount: Array.isArray(shortAwakenings) ? shortAwakenings.length : 0,
   };
-  if (minutesAsleep !== undefined) night.minutesAsleep = minutesAsleep;
+  if (minutesAsleep !== undefined) {
+    night.minutesAsleep = minutesAsleep;
+    night.hoursAsleep = hours(minutesAsleep);
+  }
   if (minutesAsleep !== undefined && inBedMinutes > 0) {
     night.sleepEfficiencyPercent = Math.round((minutesAsleep / inBedMinutes) * 100);
   }
@@ -133,6 +140,10 @@ export function summarizeSleepSession(session: unknown, options: { includeStages
     });
   }
   return night;
+}
+
+function hours(minutes: number): number {
+  return Math.round(minutes / 0.6) / 100;
 }
 
 function civilEndDate(interval: Record<string, unknown>): string | null {

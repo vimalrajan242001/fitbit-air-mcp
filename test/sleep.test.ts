@@ -24,6 +24,8 @@ test('summarizes the published sleep reconcile example', async () => {
   assert.equal(night.sourceDevice, 'Charge 6');
   assert.equal(night.inBedMinutes, 464);
   assert.equal(night.minutesAsleep, 407);
+  assert.equal(night.inBedHours, 7.73);
+  assert.equal(night.hoursAsleep, 6.78);
   assert.equal(night.stageMinutes.AWAKE, 56);
   assert.equal(night.stageMinutes.LIGHT, 198);
   assert.equal(night.stageMinutes.DEEP, 114);

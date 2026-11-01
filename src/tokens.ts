@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 
-import { ACCESS_TOKEN_SKEW_MS, OAUTH_TOKEN_URL, TESTING_REFRESH_MS } from './constants.js';
+import { ACCESS_TOKEN_SKEW_MS, LOGIN_WARNING_MS, OAUTH_TOKEN_URL, TESTING_REFRESH_MS } from './constants.js';
 import { loadOAuthClient, type OAuthClient } from './env.js';
 import { HealthCallError, findReason, isRecord, sanitizeText } from './errors.js';
 import { tokenPath } from './paths.js';
@@ -38,6 +38,19 @@ export function loginDeadline(refreshObtainedAt: string): string {
 
 export function loginIsDue(tokens: Pick<TokenFile, 'refreshObtainedAt'>, now: Date): boolean {
   return now.getTime() >= Date.parse(loginDeadline(tokens.refreshObtainedAt));
+}
+
+/** A reminder once the Testing-mode refresh token is within LOGIN_WARNING_MS of its deadline. Never throws. */
+export function loginWarning(deps: Pick<TokenDeps, 'configDir' | 'now' | 'remote'>): string | undefined {
+  try {
+    const tokens = deps.remote ?? readTokenFile(deps.configDir);
+    if (!tokens) return undefined;
+    const dueAt = loginDeadline(tokens.refreshObtainedAt);
+    if (Date.parse(dueAt) - deps.now().getTime() > LOGIN_WARNING_MS) return undefined;
+    return `Google access ends at ${dueAt} (Testing mode). Sign in again before then; locally run npm run login.`;
+  } catch {
+    return undefined;
+  }
 }
 
 export function readTokenFile(configDir: string): TokenFile | null {

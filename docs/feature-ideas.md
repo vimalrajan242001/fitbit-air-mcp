@@ -1,6 +1,6 @@
 # Feature ideas
 
-Brainstorm date: 2026-11-01. Covers the five tools and `fitbit://today` as of #9. Nothing here is built. Items marked **Ask first** need sign-off under `CLAUDE.md` (new tool or new scope).
+Brainstorm date: 2026-11-01. Covers the five tools and `fitbit://today` as of #9. Built so far: 5 (`distance.kilometers`, `inBedHours`, `hoursAsleep`), 6 (`loginWarning`), 8 (`weekly_review` and `sleep_check` prompts). Items marked **Ask first** need sign-off under `CLAUDE.md` (new tool or new scope).
 
 ## The problem
 

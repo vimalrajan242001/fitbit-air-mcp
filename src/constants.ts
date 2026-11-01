@@ -26,6 +26,9 @@ export const SCOPES = [
 /** Testing-mode refresh tokens last 7 days from refreshObtainedAt. */
 export const TESTING_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Tool results carry loginWarning once the refresh token has this long or less left. */
+export const LOGIN_WARNING_MS = 48 * 60 * 60 * 1000;
+
 /** active-minutes and total-calories reject ranges over 14 days. Tools stay at 7. */
 export const MAX_ACTIVITY_DAYS = 7;
 
