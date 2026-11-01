@@ -1,6 +1,6 @@
 import { MAX_ACTIVITY_DAYS, MAX_ACTIVITY_PAGES, WEARABLE_FAMILY } from './constants.js';
 import {
-  assertActivityRange,
+  assertRange,
   closedOpenRange,
   eachCivilDate,
   formatCivilDate,
@@ -70,36 +70,37 @@ export async function readDailyActivity(
   end: string,
   series: readonly ActivitySeries[] = ACTIVITY_SERIES,
 ): Promise<ActivityResult> {
-  assertActivityRange(start, end, MAX_ACTIVITY_DAYS);
+  assertRange(start, end, MAX_ACTIVITY_DAYS);
   const dates = eachCivilDate(start, end);
   const days = new Map<string, ActivityDay>(dates.map((date) => [date, { date }]));
   const missing: Missing[] = [];
   const failed = new Set<ActivitySeries>();
   let authStopped = false;
 
-  for (let index = 0; index < series.length; index += 1) {
-    const name = series[index]!;
-    try {
-      const points = await rollUp(api, name, start, end);
-      for (const point of points) {
+  const results = await Promise.allSettled(series.map((name) => rollUp(api, name, start, end)));
+  const unexpected = results.find((result) => result.status === 'rejected' && !(result.reason instanceof HealthCallError));
+  if (unexpected?.status === 'rejected') throw unexpected.reason;
+  const authError = results.find(
+    (result) => result.status === 'rejected' && ['not_linked', 'no_token', 'login_due'].includes((result.reason as HealthCallError).kind),
+  );
+  if (authError?.status === 'rejected') {
+    for (const name of series) missing.push({ series: name, reason: (authError.reason as HealthCallError).message });
+    authStopped = true;
+  } else {
+    results.forEach((result, index) => {
+      const name = series[index]!;
+      if (result.status === 'rejected') {
+        failed.add(name);
+        missing.push({ series: name, reason: (result.reason as HealthCallError).message });
+        return;
+      }
+      for (const point of result.value) {
         const date = civilDateOf(point);
         const day = date ? days.get(date) : undefined;
         if (!day) continue;
         applyPoint(day, name, point, missing);
       }
-    } catch (error) {
-      if (error instanceof HealthCallError && (error.kind === 'not_linked' || error.kind === 'no_token' || error.kind === 'login_due')) {
-        for (const rest of series.slice(index)) missing.push({ series: rest, reason: error.message });
-        authStopped = true;
-        break;
-      }
-      if (error instanceof HealthCallError) {
-        failed.add(name);
-        missing.push({ series: name, reason: error.message });
-        continue;
-      }
-      throw error;
-    }
+    });
   }
 
   if (!authStopped) for (const date of dates) {
@@ -179,8 +180,10 @@ export async function comparePeriods(
   deltas: ActivityTotals;
   daysWithData: { periodA: Record<ActivitySeries, number>; periodB: Record<ActivitySeries, number> };
 }> {
-  const left = await readDailyActivity(api, periodA.start, periodA.end);
-  const right = await readDailyActivity(api, periodB.start, periodB.end);
+  const [left, right] = await Promise.all([
+    readDailyActivity(api, periodA.start, periodA.end),
+    readDailyActivity(api, periodB.start, periodB.end),
+  ]);
   return {
     periodA: left,
     periodB: right,

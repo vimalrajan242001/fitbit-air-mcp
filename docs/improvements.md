@@ -26,10 +26,10 @@ Security review: 2026-10-31. Adds the Cloudflare Worker (`src/worker.ts`, `wrang
 | 6 | P1 | Correctness | ~~`compare_periods` deltas ignore unequal data coverage~~ Resolved | S |
 | 7 | P1 | Correctness | ~~`readToday` detects auth failures by matching message strings~~ Resolved | XS |
 | 8 | P1 | Correctness | ~~Error handling differs across tools and the resource~~ Resolved | S |
-| 9 | P2 | Testing | `test/http.test.ts` binds the real port 8788 | XS |
-| 10 | P2 | Robustness | No retry on 429 / 5xx | S |
-| 11 | P2 | Robustness | `sleep_nights` has no range cap | XS |
-| 12 | P2 | Performance | All Health API calls run sequentially | S |
+| 9 | P2 | Testing | ~~`test/http.test.ts` binds the real port 8788~~ Resolved | XS |
+| 10 | P2 | Robustness | ~~No retry on 429 / 5xx~~ Resolved | S |
+| 11 | P2 | Robustness | ~~`sleep_nights` has no range cap~~ Resolved | XS |
+| 12 | P2 | Performance | ~~All Health API calls run sequentially~~ Resolved | S |
 | 13 | P3 | Maintainability | Pagination loop duplicated three times | S |
 | 14 | P3 | Maintainability | `identityResult` duplicates the Health client and hardcodes the URL | XS |
 | 15 | P3 | Maintainability | Small duplications: civil date formatting, server version, sums | XS |
@@ -37,7 +37,7 @@ Security review: 2026-10-31. Adds the Cloudflare Worker (`src/worker.ts`, `wrang
 | 17 | P3 | Docs | README inaccuracies | XS |
 | 18 | P1 | Security (Worker auth) | ~~Worker accepts any Google account~~ Resolved | S |
 | 19 | P1 | Security (Worker auth) | ~~Open client registration allows consent phishing~~ Resolved | S |
-| 20 | P2 | Security (Worker abuse) | No rate limit on `/register` | XS |
+| 20 | P2 | Security (Worker abuse) | ~~No rate limit on `/register`~~ Resolved | XS |
 | 21 | P3 | Security (local) | Local `/mcp` and the login loopback trust every local process | — |
 | 22 | P3 | Security (logging) | Worker logs and tool errors can carry codes and local paths | XS |
 | 23 | P3 | Security (CI) | Deploy job holds the Cloudflare token behind tag-pinned actions | XS |
@@ -145,6 +145,8 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 9. P2 — `test/http.test.ts` binds the real port
 
+**Resolved:** the test listens on port 0 and reads the port from `server.address()`. The README tip is gone.
+
 **Where:** `test/http.test.ts`, README "Verification" tip.
 
 **Problem:** `npm run check` fails while Cursor (or `npm start`) is running. The README works around this instead of fixing it.
@@ -157,6 +159,8 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 10. P2 — No retry on 429 / 5xx
 
+**Resolved:** `request` retries once on 429, 500, 502, 503, and 504, after `Retry-After` seconds (capped at 5) or 1 s.
+
 **Where:** `src/health.ts` `request`.
 
 **Problem:** Transient failures go straight to `missing` or to an error.
@@ -165,6 +169,8 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 11. P2 — `sleep_nights` range is unbounded
 
+**Resolved:** `readSleepNights` calls `assertRange` (renamed from `assertActivityRange`) with `MAX_SLEEP_DAYS = 31`.
+
 **Where:** `src/sleep.ts` `readSleepNights`.
 
 **Problem:** Activity is capped at 7 days; sleep isn't. A one-year request makes up to 25 sequential pages and returns a very large result to the model.
@@ -172,6 +178,8 @@ Effort: XS < 15 min, S < 1 h.
 **Fix:** Cap at about 31 days with the same error style as `assertActivityRange`.
 
 ### 12. P2 — All Health API calls are sequential
+
+**Resolved:** activity series run under `Promise.allSettled`, `compare_periods` reads both periods at once, and `readToday` reads sleep and sync together. An auth stop on any series now marks every series missing.
 
 **Where:** `src/activity.ts` (5 series), `comparePeriods` (2 × 5), `src/today.ts` (settings, then activity, sleep, and sync).
 
@@ -244,6 +252,8 @@ Effort: XS < 15 min, S < 1 h.
 **Fix:** Add a `clientRegistrationCallback` that only accepts redirect hosts you use (for example `claude.ai`, `chatgpt.com`, and loopback).
 
 ### 20. P2 — No rate limit on `/register`
+
+**Resolved:** a `REGISTER_LIMITER` rate-limit binding (`wrangler.toml`) allows 5 `POST /register` per minute per IP; more get 429. The Worker is on workers.dev, so there is no zone to put a WAF rule on.
 
 **Where:** `src/worker.ts`, Cloudflare zone settings.
 

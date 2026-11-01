@@ -106,3 +106,13 @@ test('compare_periods subtracts the published daily step counts', async () => {
   assert.equal(result.daysWithData.periodA.steps, 1);
   assert.equal(result.daysWithData.periodB.distance, 0);
 });
+
+test('an auth stop on any series marks every series missing and adds no per-day gaps', async () => {
+  const api = fakeHealthApi(async (_method, path) => {
+    if (path.includes('/distance/')) throw new HealthCallError('not_linked', 'phone setup unfinished', 400);
+    return publishedDay;
+  });
+  const result = await readDailyActivity(api, '2026-02-26', '2026-02-26');
+  assert.equal(result.missing.length, 5);
+  assert.equal(result.missing.every((entry) => entry.reason === 'phone setup unfinished' && entry.date === undefined), true);
+});

@@ -52,7 +52,7 @@ Documented rollup fields, with no unit conversion:
 
 A missing rollup for a civil day is an empty series plus a `missing` entry. A documented zero stays zero.
 
-Sleep uses `GET /users/me/dataTypes/sleep/dataPoints:reconcile` with the wearable family, page size 25, and `filter=sleep.interval.civil_end_time >= "{start}"` plus the documented upper bound `< "{day after end}"`. In-bed minutes are the session interval. Asleep minutes are `summary.minutesAsleep`. Light, deep, REM, and awake minutes are `summary.stagesSummary`. Short-awakening count is the length of `shortAwakenings`. `detail=true` returns stage intervals only for a single night. `sleepEfficiencyPercent` is `round((minutesAsleep / inBedMinutes) * 100)` from the sleep guide. It is not the in-app Sleep Score.
+Sleep uses `GET /users/me/dataTypes/sleep/dataPoints:reconcile` with the wearable family, page size 25, at most 31 days per request, and `filter=sleep.interval.civil_end_time >= "{start}"` plus the documented upper bound `< "{day after end}"`. In-bed minutes are the session interval. Asleep minutes are `summary.minutesAsleep`. Light, deep, REM, and awake minutes are `summary.stagesSummary`. Short-awakening count is the length of `shortAwakenings`. `detail=true` returns stage intervals only for a single night. `sleepEfficiencyPercent` is `round((minutesAsleep / inBedMinutes) * 100)` from the sleep guide. It is not the in-app Sleep Score.
 
 `sync_status` is `GET /users/me/pairedDevices`. It returns `deviceVersion`, `batteryLevel`, `batteryStatus`, `lastSyncTime`, and `features`. `macAddress` is deleted before the result is built.
 

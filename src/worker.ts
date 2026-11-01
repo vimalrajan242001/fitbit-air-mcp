@@ -29,6 +29,8 @@ export type Env = {
   PUBLIC_URL: string;
   /** Signs the remembered-consent cookie. 32+ random chars. */
   CONSENT_SECRET: string;
+  /** Per-IP limit on unauthenticated client registration. */
+  REGISTER_LIMITER: RateLimit;
   /** healthUserId of the one Google account allowed to sign in. */
   OWNER_HEALTH_USER_ID?: string;
 };
@@ -152,7 +154,11 @@ export async function tokenExchangeCallback({ grantType, props, env }: TokenExch
 let provider: OAuthProvider<Env> | undefined;
 
 export default {
-  fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    if (request.method === 'POST' && new URL(request.url).pathname === '/register') {
+      const { success } = await env.REGISTER_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'unknown' });
+      if (!success) return text('Too many registrations. Try again later.', 429);
+    }
     provider ??= new OAuthProvider<Env>({
       apiRoute: '/mcp',
       apiHandler,

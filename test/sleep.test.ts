@@ -61,3 +61,9 @@ test('counts documented shortAwakenings and hides stages for a multi-night detai
   assert.equal(twoNights.nights[0]?.stages, undefined);
   assert.equal(twoNights.missing.some((entry) => entry.reason.includes('single night')), true);
 });
+
+test('refuses a sleep range longer than 31 days before calling the API', async () => {
+  const api = fakeHealthApi(() => ({ dataPoints: [] }));
+  await assert.rejects(() => readSleepNights(api, '2026-01-01', '2026-02-01', false), /31 days/);
+  assert.equal(api.calls.length, 0);
+});
