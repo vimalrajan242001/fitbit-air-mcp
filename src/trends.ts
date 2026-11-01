@@ -59,20 +59,14 @@ export async function readActivityWeeks(api: HealthApi, start: string, end: stri
   };
 }
 
-/** Sleep grouped into 7-day weeks. The longest session per date is the main sleep; the rest are naps. */
-export async function readSleepWeeks(api: HealthApi, start: string, end: string) {
+/**
+ * Sleep grouped into 7-day weeks. The longest session per date is the main sleep; the rest are naps.
+ * `includeSessions` adds every session per week, with `isMainSleep`, so nothing is summarized away.
+ */
+export async function readSleepWeeks(api: HealthApi, start: string, end: string, includeSessions = false) {
   const result = await readSleepNights(api, start, end, false, MAX_TREND_DAYS);
-  const main = new Map<string, SleepNight>();
-  const naps: SleepNight[] = [];
-  for (const night of result.nights) {
-    const current = main.get(night.date);
-    if (!current || night.inBedMinutes > current.inBedMinutes) {
-      if (current) naps.push(current);
-      main.set(night.date, night);
-    } else {
-      naps.push(night);
-    }
-  }
+  const main = new Map(result.nights.filter((night) => night.isMainSleep).map((night) => [night.date, night]));
+  const naps = result.nights.filter((night) => !night.isMainSleep);
   const dates = [...main.keys()];
   const window = baselineWindow(start, end);
   return {
@@ -87,7 +81,16 @@ export async function readSleepWeeks(api: HealthApi, start: string, end: string)
         end: weekEnd,
         nightsWithData: nights.length,
         mainSleep: summarizeMainSleep(nights),
-        naps: { count: weekNaps.length, inBedMinutes: total(weekNaps.map((nap) => nap.inBedMinutes)) },
+        naps: {
+          count: weekNaps.length,
+          inBedMinutes: total(weekNaps.map((nap) => nap.inBedMinutes)),
+          minutesAsleep: total(weekNaps.map((nap) => nap.minutesAsleep)),
+        },
+        ...(includeSessions
+          ? {
+              sessions: result.nights.filter((night) => night.date >= weekStart && night.date <= weekEnd),
+            }
+          : {}),
       };
     }),
     baseline: {

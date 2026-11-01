@@ -70,16 +70,22 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
     'sleep_nights',
     {
       description:
-        'Wearable sleep sessions whose civil end date falls in the inclusive range, at most 31 days. In-bed minutes come from the session interval. Asleep, stage minutes, and short awakenings come from the documented summary fields. Stage intervals are included only when detail is true and the range is one night. With granularity "week" the range may be up to 91 days: the longest session per date is the main sleep and the others are counted as naps; each 7-day week has average asleep and in-bed minutes, the median local bedtime, and its spread (25th-75th percentile, minutes), plus a 28-day baseline. Main sleep is wrong when a nap outlasts a broken night. This is not a Sleep Score and not a diagnosis.',
+        'Wearable sleep sessions whose civil end date falls in the inclusive range, at most 31 days. In-bed minutes come from the session interval. Asleep, stage minutes, and short awakenings come from the documented summary fields. Stage intervals are included only when detail is true and the range is one night. Each session has isMainSleep: true for the longest in-bed session on its date, false for naps. With granularity "week" the range may be up to 91 days: main sleeps and naps are summarized apart; each 7-day week has average asleep and in-bed minutes, the median local bedtime, and its spread (25th-75th percentile, minutes), plus a 28-day baseline. Main sleep is wrong when a nap outlasts a broken night; set includeSessions to also get every session per week. This is not a Sleep Score and not a diagnosis.',
       inputSchema: z.object({
         start: dateField.describe('Inclusive civil start date, YYYY-MM-DD'),
         end: dateField.optional().describe('Inclusive civil end date, YYYY-MM-DD. Defaults to start.'),
         detail: z.boolean().optional().describe('Include stage intervals. Honored only for a single night.'),
         granularity: granularityField,
+        includeSessions: z
+          .boolean()
+          .optional()
+          .describe('Week granularity only: list every session (main sleep and naps) in each week. Day granularity always lists every session.'),
       }),
     },
-    run(({ start, end, detail, granularity }) =>
-      granularity === 'week' ? readSleepWeeks(api, start, end ?? start) : readSleepNights(api, start, end ?? start, detail ?? false),
+    run(({ start, end, detail, granularity, includeSessions }) =>
+      granularity === 'week'
+        ? readSleepWeeks(api, start, end ?? start, includeSessions ?? false)
+        : readSleepNights(api, start, end ?? start, detail ?? false),
     ),
   );
 

@@ -36,6 +36,22 @@ test('summarizes the published sleep reconcile example', async () => {
   assert.equal(JSON.stringify(result).includes('Sleep Score'), false);
 });
 
+test('marks the longest session per date as main sleep even when a nap ends later', async () => {
+  const nap = structuredClone((published.dataPoints as Array<Record<string, unknown>>)[0]!);
+  const napSleep = nap.sleep as { interval: { startTime: string; endTime: string } };
+  napSleep.interval.startTime = '2026-03-04T13:00:00Z';
+  napSleep.interval.endTime = '2026-03-04T13:30:00Z';
+  const api = fakeHealthApi(async () => ({ dataPoints: [...(published.dataPoints as unknown[]), nap] }));
+  const result = await readSleepNights(api, '2026-03-04', '2026-03-04', false);
+  assert.deepEqual(
+    result.nights.map((night) => [night.inBedMinutes, night.isMainSleep]),
+    [
+      [464, true],
+      [30, false],
+    ],
+  );
+});
+
 test('in-bed minutes come from the interval, not minutesInSleepPeriod', () => {
   const session = structuredClone(published.dataPoints);
   const point = (session as Array<Record<string, unknown>>)[0]!;

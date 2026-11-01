@@ -25,6 +25,8 @@ export type SleepNight = {
   /** Documented ratio round((minutesAsleep / inBedMinutes) * 100). Not the in-app Sleep Score. */
   sleepEfficiencyPercent?: number;
   stages?: SleepStageInterval[];
+  /** The longest in-bed session for its civil date; the others are naps. Wrong when a nap outlasts a broken night. */
+  isMainSleep: boolean;
 };
 
 export type SleepResult = {
@@ -67,6 +69,12 @@ export async function readSleepNights(api: HealthApi, start: string, end: string
     nights.push(night);
   }
   nights.sort((left, right) => left.interval.endTime.localeCompare(right.interval.endTime));
+  const main = new Map<string, SleepNight>();
+  for (const night of nights) {
+    const current = main.get(night.date);
+    if (!current || night.inBedMinutes > current.inBedMinutes) main.set(night.date, night);
+  }
+  for (const night of main.values()) night.isMainSleep = true;
 
   const covered = new Set(nights.map((night) => night.date));
   for (const date of eachCivilDate(start, end)) {
@@ -109,6 +117,7 @@ export function summarizeSleepSession(session: unknown, options: { includeStages
     inBedMinutes,
     stageMinutes,
     shortAwakeningCount: Array.isArray(shortAwakenings) ? shortAwakenings.length : 0,
+    isMainSleep: false,
   };
   if (minutesAsleep !== undefined) night.minutesAsleep = minutesAsleep;
   if (minutesAsleep !== undefined && inBedMinutes > 0) {

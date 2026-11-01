@@ -71,11 +71,23 @@ test('weekly sleep keeps the longest session per date as main sleep and counts n
   const result = await readSleepWeeks(api, '2026-03-02', '2026-03-03');
   const week = result.weeks[0]!;
   assert.equal(week.nightsWithData, 2);
-  assert.deepEqual(week.naps, { count: 1, inBedMinutes: 40 });
+  assert.deepEqual(week.naps, { count: 1, inBedMinutes: 40, minutesAsleep: 30 });
+  assert.equal('sessions' in week, false);
   assert.equal(week.mainSleep?.averageMinutesAsleep, 400);
   assert.equal(week.mainSleep?.medianBedtime, '23:45');
   assert.equal(week.mainSleep?.bedtimeSpreadMinutes, 45);
   assert.equal(result.baseline.minutesAsleep.median, 400);
   assert.equal(result.missing.length, 0);
   assert.equal(JSON.stringify(result).includes('Sleep Score'), false);
+
+  const withSessions = await readSleepWeeks(api, '2026-03-02', '2026-03-03', true);
+  const sessions = withSessions.weeks[0]!.sessions!;
+  assert.deepEqual(
+    sessions.map((night) => [night.date, night.isMainSleep, night.minutesAsleep]),
+    [
+      ['2026-03-02', true, 420],
+      ['2026-03-02', false, 30],
+      ['2026-03-03', true, 380],
+    ],
+  );
 });

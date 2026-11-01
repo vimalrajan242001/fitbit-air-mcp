@@ -40,7 +40,7 @@ export async function readToday(api: HealthApi, now: Date): Promise<TodaySnapsho
   if (activity.authStopped) return { timeZone, date, missing: activity.missing };
   const [sleep, sync] = await Promise.all([readSleepNights(api, date, date, false), readSyncStatus(api)]);
   const day = activity.days.find((entry) => entry.date === date);
-  const lastNight = sleep.nights.at(-1);
+  const lastNight = sleep.nights.find((night) => night.isMainSleep);
   const syncDevice = latestSync(sync.devices);
   const snapshot: TodaySnapshot = {
     timeZone,
