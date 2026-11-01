@@ -23,8 +23,8 @@ A 28-day live pull also showed:
 | 6 | Reliability | Add a `loginDue` warning to every result when the refresh token expires within 48 h | XS | — |
 | 7 | Reliability | Publish the Google app to end the 7-day Testing-mode expiry | L | Verification |
 | 8 | Workflows | MCP prompts ("weekly review", "sleep check") that chain existing tools | XS | — |
-| 9 | Recovery | `recovery_day`: resting heart rate, daily HRV, daily SpO2 (the planned next slice) | M | **Ask first** |
-| 10 | Recovery | Workouts / exercise sessions | M | **Ask first** |
+| 9 | Recovery | `recovery_day`: resting heart rate, daily HRV, daily SpO2. **Built.** | M | — |
+| 10 | Recovery | `exercise_sessions`: workouts, no GPS. **Built.** | M | — |
 
 Effort: XS < 15 min, S < 1 h, M < 1 day, L = days and outside the code.
 

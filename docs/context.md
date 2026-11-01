@@ -38,7 +38,7 @@ The env file and `tokens.json` live in `~/.config/fitbit-air-mcp/` (on Windows, 
 
 ## This slice
 
-Tools: `connection_status`, `sync_status`, `daily_activity`, `sleep_nights`, `compare_periods`. Resource: `fitbit://today`.
+Tools: `connection_status`, `sync_status`, `daily_activity`, `sleep_nights`, `compare_periods`, `recovery_day`, `exercise_sessions`. Resource: `fitbit://today`.
 
 Activity uses `POST /users/me/dataTypes/{type}/dataPoints:dailyRollUp` with `windowSizeDays: 1`, a closed-open civil range, and `dataSourceFamily` `users/me/dataSourceFamilies/google-wearables`. Types: `steps`, `distance`, `active-zone-minutes`, `active-minutes`, `total-calories`. Each request is at most 7 days because `active-minutes` and `total-calories` reject ranges over 14.
 
@@ -54,6 +54,10 @@ A missing rollup for a civil day is an empty series plus a `missing` entry. A do
 
 Sleep uses `GET /users/me/dataTypes/sleep/dataPoints:reconcile` with the wearable family, page size 25, at most 31 days per request, and `filter=sleep.interval.civil_end_time >= "{start}"` plus the documented upper bound `< "{day after end}"`. In-bed minutes are the session interval. Asleep minutes are `summary.minutesAsleep`. Light, deep, REM, and awake minutes are `summary.stagesSummary`. Short-awakening count is the length of `shortAwakenings`. `detail=true` returns stage intervals only for a single night. `sleepEfficiencyPercent` is `round((minutesAsleep / inBedMinutes) * 100)` from the sleep guide. It is not the in-app Sleep Score.
 
+`recovery_day` reconciles `daily-resting-heart-rate`, `daily-heart-rate-variability`, and `daily-oxygen-saturation` with the wearable family, at most 31 days, filtered on `{type_with_underscores}.date >= "{start}"` and `< "{day after end}"`. It keeps `beatsPerMinute`; `averageHeartRateVariabilityMilliseconds`, `deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds`, `nonRemHeartRateBeatsPerMinute`, `entropy`; and `averagePercentage`, `lowerBoundPercentage`, `upperBoundPercentage`, `standardDeviationPercentage`.
+
+`exercise_sessions` reconciles `exercise` with the wearable family, at most 31 days, filtered on `exercise.interval.civil_start_time`. It keeps `exerciseType`, `displayName`, the interval, `activeDuration` as minutes, and the `metricsSummary` fields `steps`, `caloriesKcal`, `distanceMillimeters`, `elevationGainMillimeters`, `averageHeartRateBeatsPerMinute`, `activeZoneMinutes`, `averageSpeedMillimetersPerSecond`, `averagePaceSecondsPerMeter`. No `notes`, `exerciseMetadata`, splits, or events.
+
 `sync_status` is `GET /users/me/pairedDevices`. It returns `deviceVersion`, `batteryLevel`, `batteryStatus`, `lastSyncTime`, and `features`. `macAddress` is deleted before the result is built.
 
 `fitbit://today` reads `GET /users/me/settings` for `timeZone`, then today’s steps and zone minutes, last night’s sleep summary, and the latest sync time. It has no resting heart rate and no tokens.
@@ -62,7 +66,7 @@ A missing scope or HTTP 403 becomes a `missing` entry. The rest of the tool stil
 
 ## Next slice
 
-Resting heart rate, daily HRV, and daily SpO2 (`recovery_day`), then workouts and a bounded heart-rate series. Skin temperature and VO2 max wait. GPS and irregular-rhythm notifications stay off until asked for. Still no write, delete, or generic URL tool.
+A bounded heart-rate series. Skin temperature and VO2 max wait. GPS and irregular-rhythm notifications stay off until asked for. Still no write, delete, or generic URL tool.
 
 ## Ports
 

@@ -1,7 +1,7 @@
-import { MAX_SLEEP_DAYS, MAX_SLEEP_PAGES, SLEEP_PAGE_SIZE, WEARABLE_FAMILY } from './constants.js';
-import { addCivilDays, assertRange, eachCivilDate, formatCivilDate, parseDurationSeconds, readInt } from './dates.js';
+import { MAX_SLEEP_DAYS, MAX_SLEEP_PAGES, WEARABLE_FAMILY } from './constants.js';
+import { addCivilDays, assertRange, civilDateOf, eachCivilDate, readInt } from './dates.js';
 import { HealthCallError, isRecord, type Missing } from './errors.js';
-import { paginate, type HealthApi } from './health.js';
+import { reconcile, type HealthApi } from './health.js';
 
 const STAGE_TYPES = ['AWAKE', 'LIGHT', 'DEEP', 'REM', 'ASLEEP', 'RESTLESS'] as const;
 type StageType = (typeof STAGE_TYPES)[number];
@@ -82,7 +82,7 @@ export function summarizeSleepSession(session: unknown, options: { includeStages
   const startMs = Date.parse(interval.startTime);
   const endMs = Date.parse(interval.endTime);
   if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) return null;
-  const date = civilEndDate(interval);
+  const date = civilDateOf(interval.civilEndTime, interval.endTime, interval.endUtcOffset);
   if (!date) return null;
   const inBedMinutes = Math.round((endMs - startMs) / 60_000);
   const summary = isRecord(session.sleep.summary) ? session.sleep.summary : undefined;
@@ -135,36 +135,8 @@ export function summarizeSleepSession(session: unknown, options: { includeStages
   return night;
 }
 
-function civilEndDate(interval: Record<string, unknown>): string | null {
-  const civil = interval.civilEndTime;
-  if (isRecord(civil) && isRecord(civil.date)) {
-    const { year, month, day } = civil.date;
-    if (typeof year === 'number' && typeof month === 'number' && typeof day === 'number') {
-      return formatCivilDate({ year, month, day });
-    }
-  }
-  if (typeof interval.endTime !== 'string') return null;
-  const offset = parseDurationSeconds(interval.endUtcOffset) ?? 0;
-  const shifted = new Date(Date.parse(interval.endTime) + offset * 1000);
-  if (Number.isNaN(shifted.getTime())) return null;
-  return shifted.toISOString().slice(0, 10);
-}
-
 function reconcileSleep(api: HealthApi, start: string, end: string): Promise<unknown[]> {
   const exclusiveEnd = addCivilDays(end, 1);
   const filter = `sleep.interval.civil_end_time >= "${start}" AND sleep.interval.civil_end_time < "${exclusiveEnd}"`;
-  return paginate(
-    (pageToken) => {
-      const params = new URLSearchParams({
-        dataSourceFamily: WEARABLE_FAMILY,
-        pageSize: String(SLEEP_PAGE_SIZE),
-        filter,
-      });
-      if (pageToken) params.set('pageToken', pageToken);
-      return api.get(`/users/me/dataTypes/sleep/dataPoints:reconcile?${params.toString()}`);
-    },
-    'dataPoints',
-    MAX_SLEEP_PAGES,
-    'paging stopped before the sleep window was covered',
-  );
+  return reconcile(api, 'sleep', filter, MAX_SLEEP_PAGES, 'paging stopped before the sleep window was covered');
 }
