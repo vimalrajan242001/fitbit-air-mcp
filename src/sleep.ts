@@ -34,8 +34,8 @@ export type SleepResult = {
   missing: Missing[];
 };
 
-export async function readSleepNights(api: HealthApi, start: string, end: string, detail: boolean): Promise<SleepResult> {
-  assertRange(start, end, MAX_SLEEP_DAYS);
+export async function readSleepNights(api: HealthApi, start: string, end: string, detail: boolean, maxDays = MAX_SLEEP_DAYS): Promise<SleepResult> {
+  assertRange(start, end, maxDays);
   const missing: Missing[] = [];
   const singleNight = start === end;
   if (detail && !singleNight) {

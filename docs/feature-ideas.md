@@ -1,6 +1,6 @@
 # Feature ideas
 
-Brainstorm date: 2026-11-01. Covers the five tools and `fitbit://today` as of #9. Nothing here is built. Items marked **Ask first** need sign-off under `CLAUDE.md` (new tool or new scope).
+Brainstorm date: 2026-11-01. Covers the five tools and `fitbit://today` as of #9. Ideas 1-4 are built (`granularity: "week"`, baseline, `compare_periods` removed); the rest are not. Items marked **Ask first** need sign-off under `CLAUDE.md` (new tool or new scope).
 
 ## The problem
 

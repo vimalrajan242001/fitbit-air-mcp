@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { comparePeriods, readDailyActivity } from '../src/activity.js';
+import { readDailyActivity } from '../src/activity.js';
 import { WEARABLE_FAMILY } from '../src/constants.js';
 import { HealthCallError } from '../src/errors.js';
 import { fakeHealthApi, loadFixture } from './fixture.js';
@@ -92,20 +92,6 @@ test('refuses an activity range longer than 7 days before calling the API', asyn
   assert.equal(api.calls.length, 0);
 });
 
-test('compare_periods subtracts the published daily step counts', async () => {
-  const api = fakeHealthApi(async (_method, path, body) => {
-    if (!path.includes('/steps/')) return { rollupDataPoints: [] };
-    const start = (body as { range: { start: { date: { day: number } } } }).range.start.date.day;
-    const point = rangePoints.find((entry) => (entry.civilStartTime as { date: { day: number } }).date.day === start);
-    return { rollupDataPoints: point ? [point] : [] };
-  });
-  const result = await comparePeriods(api, { start: '2026-07-28', end: '2026-07-28' }, { start: '2026-07-29', end: '2026-07-29' });
-  assert.equal(result.deltas.stepsCountSum, 11245 - 8430);
-  assert.equal(result.deltas.distanceMillimetersSum, undefined);
-  assert.equal(result.deltaMeaning, 'periodB minus periodA');
-  assert.equal(result.daysWithData.periodA.steps, 1);
-  assert.equal(result.daysWithData.periodB.distance, 0);
-});
 
 test('an auth stop on any series marks every series missing and adds no per-day gaps', async () => {
   const api = fakeHealthApi(async (_method, path) => {

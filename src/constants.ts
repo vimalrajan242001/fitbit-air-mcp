@@ -32,6 +32,12 @@ export const MAX_ACTIVITY_DAYS = 7;
 /** Keeps a sleep read to a few pages and a result the model can hold. */
 export const MAX_SLEEP_DAYS = 31;
 
+/** Weekly trend reads: 13 weeks, paged inside the server. */
+export const MAX_TREND_DAYS = 91;
+
+/** Days behind a baseline, ending at the range end. */
+export const BASELINE_DAYS = 28;
+
 /** Sleep and exercise pages are capped at 25 sessions. */
 export const SLEEP_PAGE_SIZE = 25;
 export const MAX_SLEEP_PAGES = 25;

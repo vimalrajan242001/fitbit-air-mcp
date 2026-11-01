@@ -17,9 +17,8 @@ The band syncs to the Google Health mobile app. This MCP server communicates wit
 | --- | --- |
 | `connection_status` | Whether Health is linked, granted scopes, access-token expiry, and the 7-day login deadline |
 | `sync_status` | Tracker product name, battery, last sync time, and feature flags |
-| `daily_activity` | Steps, distance, active zone minutes, active minutes, and total calories for up to 7 civil days |
-| `sleep_nights` | In-bed and asleep minutes, stage minutes, and short awakenings |
-| `compare_periods` | Two daily-activity ranges, their totals, and the deltas |
+| `daily_activity` | Steps, distance, active zone minutes, active minutes, and total calories for up to 7 civil days, or weekly averages for up to 91 days with a 28-day baseline (`granularity: "week"`) |
+| `sleep_nights` | In-bed and asleep minutes, stage minutes, and short awakenings, or weekly main-sleep averages, median bedtime, and naps for up to 91 days (`granularity: "week"`) |
 
 | Resource | What it returns |
 | --- | --- |
