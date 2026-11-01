@@ -118,7 +118,7 @@ Configure `~/.cursor/mcp.json` (macOS) or `%USERPROFILE%\.cursor\mcp.json` (Wind
 ```
 
 > [!NOTE]
-> When Cursor runs `fitbit-air-mcp` via stdio, the process also binds port `8788`. Do not run a separate `npm start` while Cursor is running, or it will conflict on port `8788`.
+> When Cursor runs `fitbit-air-mcp` via stdio, the process also binds port `8788`. A second stdio client (or `npm start`) finds the port taken, logs it, and serves stdio only.
 
 ---
 
@@ -142,7 +142,7 @@ One-time deploy:
 
 1. `npx wrangler login`
 2. `npx wrangler kv namespace create OAUTH_KV`, then put the id in `wrangler.toml`.
-3. `npx wrangler secret put GOOGLE_OAUTH_CLIENT_ID`, `npx wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET`, and `npx wrangler secret put CONSENT_SECRET` (32+ random characters; it signs the cookie that remembers your approval)
+3. `npx wrangler secret put GOOGLE_OAUTH_CLIENT_ID`, `npx wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET`, and `npx wrangler secret put CONSENT_SECRET` (32+ random characters; it signs the cookie that remembers your approval), and `npx wrangler secret put OWNER_HEALTH_USER_ID` (your `healthUserId`; the Worker refuses every other Google account. While it is unset, every sign-in is refused and the error page shows the signed-in account's `healthUserId`, so connect once to read yours)
 4. `npm run deploy`. Copy the `https://fitbit-air-mcp.<you>.workers.dev` URL into `PUBLIC_URL` in `wrangler.toml`, then run `npm run deploy` again.
 5. In Google Cloud Console, add `https://fitbit-air-mcp.<you>.workers.dev/callback` to the OAuth client's **Authorized redirect URIs**. Keep the consent screen's test users to your own account: they are the only people who can sign in.
 
@@ -192,7 +192,7 @@ npm run check
 
 ## Troubleshooting
 
-- **`EADDRINUSE: 127.0.0.1:8788`**: A previously started server or Cursor instance is holding port 8788. Terminate the existing node process.
+- **`Port 8788 is already in use ... Serving stdio only`**: Another server or Cursor instance holds port 8788. Stdio still works; stop the other process if you need HTTP from this one.
 - **`redirect_uri_mismatch`**: Your Google OAuth client must have `http://127.0.0.1:8787` listed under Authorized redirect URIs.
 
 ---

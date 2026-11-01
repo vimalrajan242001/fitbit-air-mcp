@@ -39,6 +39,8 @@ export type ActivityResult = {
   dataSourceFamily: typeof WEARABLE_FAMILY;
   days: ActivityDay[];
   missing: Missing[];
+  /** Set when the account needs login or linking, so later calls would fail the same way. */
+  authStopped?: true;
 };
 
 export type ActivityTotals = {
@@ -112,12 +114,19 @@ export async function readDailyActivity(
     }
   }
 
-  return {
+  const result: ActivityResult = {
     range: { start, end },
     dataSourceFamily: WEARABLE_FAMILY,
     days: dates.map((date) => days.get(date)!),
     missing,
   };
+  if (authStopped) result.authStopped = true;
+  return result;
+}
+
+/** Days per series that have a value, so sums over unequal coverage are not read as a change. */
+export function daysWithData(days: ActivityDay[]): Record<ActivitySeries, number> {
+  return Object.fromEntries(ACTIVITY_SERIES.map((name) => [name, days.filter((day) => hasSeries(day, name)).length])) as Record<ActivitySeries, number>;
 }
 
 export function activityTotals(days: ActivityDay[]): ActivityTotals {
@@ -169,6 +178,7 @@ export async function comparePeriods(
   periodB: ActivityResult;
   deltaMeaning: 'periodB minus periodA';
   deltas: ActivityTotals;
+  daysWithData: { periodA: Record<ActivitySeries, number>; periodB: Record<ActivitySeries, number> };
 }> {
   const [left, right] = await Promise.all([
     readDailyActivity(api, periodA.start, periodA.end),
@@ -179,6 +189,7 @@ export async function comparePeriods(
     periodB: right,
     deltaMeaning: 'periodB minus periodA',
     deltas: subtractTotals(activityTotals(left.days), activityTotals(right.days)),
+    daysWithData: { periodA: daysWithData(left.days), periodB: daysWithData(right.days) },
   };
 }
 

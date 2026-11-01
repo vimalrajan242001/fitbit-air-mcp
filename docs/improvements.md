@@ -21,11 +21,11 @@ Security review: 2026-10-31. Adds the Cloudflare Worker (`src/worker.ts`, `wrang
 | 1 | P0 | Security | ~~Tunnel modes expose `/mcp` with no authentication~~ Resolved | S |
 | 2 | P0 | Security | ~~Personal ngrok domain is committed in `package.json`~~ Resolved | XS |
 | 3 | P0 | Reliability | ~~`tokens.json` is overwritten in place, not atomically~~ Resolved | XS |
-| 4 | P1 | Reliability | Every stdio launch binds port 8788; a second client dies | S |
+| 4 | P1 | Reliability | ~~Every stdio launch binds port 8788; a second client dies~~ Resolved | S |
 | 5 | P1 | Tooling | ~~`npm run tunnel` is PowerShell-only; README says it works on Mac~~ Resolved | XS |
-| 6 | P1 | Correctness | `compare_periods` deltas ignore unequal data coverage | S |
-| 7 | P1 | Correctness | `readToday` detects auth failures by matching message strings | XS |
-| 8 | P1 | Correctness | Error handling differs across tools and the resource | S |
+| 6 | P1 | Correctness | ~~`compare_periods` deltas ignore unequal data coverage~~ Resolved | S |
+| 7 | P1 | Correctness | ~~`readToday` detects auth failures by matching message strings~~ Resolved | XS |
+| 8 | P1 | Correctness | ~~Error handling differs across tools and the resource~~ Resolved | S |
 | 9 | P2 | Testing | ~~`test/http.test.ts` binds the real port 8788~~ Resolved | XS |
 | 10 | P2 | Robustness | ~~No retry on 429 / 5xx~~ Resolved | S |
 | 11 | P2 | Robustness | ~~`sleep_nights` has no range cap~~ Resolved | XS |
@@ -35,8 +35,8 @@ Security review: 2026-10-31. Adds the Cloudflare Worker (`src/worker.ts`, `wrang
 | 15 | P3 | Maintainability | Small duplications: civil date formatting, server version, sums | XS |
 | 16 | P3 | Tooling | CI: actions pinned by tag, double runs on PR pushes | XS |
 | 17 | P3 | Docs | README inaccuracies | XS |
-| 18 | P1 | Security (Worker auth) | Worker accepts any Google account | S |
-| 19 | P1 | Security (Worker auth) | Open client registration allows consent phishing | S |
+| 18 | P1 | Security (Worker auth) | ~~Worker accepts any Google account~~ Resolved | S |
+| 19 | P1 | Security (Worker auth) | ~~Open client registration allows consent phishing~~ Resolved | S |
 | 20 | P2 | Security (Worker abuse) | ~~No rate limit on `/register`~~ Resolved | XS |
 | 21 | P3 | Security (local) | Local `/mcp` and the login loopback trust every local process | — |
 | 22 | P3 | Security (logging) | Worker logs and tool errors can carry codes and local paths | XS |
@@ -86,6 +86,8 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 4. P1 — Every stdio launch binds port 8788
 
+**Resolved:** On `EADDRINUSE` the process logs it and serves stdio only.
+
 **Where:** `src/index.ts` `main()`.
 
 **Problem:** HTTP is always started before stdio. With two stdio clients (Cursor and Claude Desktop, or two Cursor windows), the second process gets `EADDRINUSE` and exits, so its stdio server never starts. The README documents this as a known conflict instead of fixing it.
@@ -109,6 +111,8 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 6. P1 — `compare_periods` deltas ignore coverage
 
+**Resolved:** `compare_periods` returns `daysWithData` per series for each period, and the tool description says to compare per-day averages when they differ.
+
 **Where:** `src/activity.ts` `comparePeriods`, `activityTotals`.
 
 **Problem:** If period A has 7 days of samples and period B has 4, `stepsCountSum` drops by about 40% and the model reports a real decline. The `missing` arrays are there, but deltas are presented as comparable.
@@ -117,6 +121,8 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 7. P1 — `readToday` matches error message strings
 
+**Resolved:** `readDailyActivity` returns `authStopped: true`, and `readToday` branches on it.
+
 **Where:** `src/today.ts` (`entry.reason === 'phone setup unfinished' || ... 'login due'`).
 
 **Problem:** It depends on exact message text from `health.ts` and `tokens.ts`. Rewording either one silently turns an auth failure into three more failing calls.
@@ -124,6 +130,8 @@ Effort: XS < 15 min, S < 1 h.
 **Fix:** Return `authStopped` (already computed) from `readDailyActivity` and branch on it.
 
 ### 8. P1 — Inconsistent error handling
+
+**Resolved:** Every tool goes through one `run` wrapper in `src/server.ts`. The `fitbit://today` resource returns `{ missing: [{ reason }] }` instead of throwing.
 
 **Where:** `src/server.ts` (`connection_status`, `sync_status`, `fitbit://today`), `src/devices.ts`, `src/today.ts`.
 
@@ -225,6 +233,8 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 18. P1 — Worker accepts any Google account
 
+**Resolved:** `ownerRefusal` (`src/worker-auth.ts`) checks `/users/me/identity` against the `OWNER_HEALTH_USER_ID` Worker secret before `completeAuthorization`. While the secret is unset, every sign-in is refused, and the error shows the signed-in account's `healthUserId`.
+
 **Where:** `src/worker.ts` `OWNER` and the `/callback` branch (`completeAuthorization`).
 
 **Problem:** Every grant is stored under the fixed user `'owner'`, and the code never checks which Google account signed in. Only the Google Cloud console blocks strangers: in Testing mode, only listed test users can sign in. If the OAuth app is published, or more test users are added, anyone can use this Worker to read their own data under your app's name and quota. They cannot see your data.
@@ -232,6 +242,8 @@ Effort: XS < 15 min, S < 1 h.
 **Fix:** After `exchangeCode`, call `/users/me/identity` with the new access token and compare the result to an `OWNER_HEALTH_USER_ID` Worker secret. Refuse before `completeAuthorization` if it does not match.
 
 ### 19. P1 — Open client registration allows consent phishing
+
+**Resolved:** `clientRegistrationCallback` (`src/worker-auth.ts`) accepts HTTPS redirects to `claude.ai`, `claude.com`, and `chatgpt.com`, plus loopback. Private-use schemes are let through at registration because the library refuses them at `/authorize`.
 
 **Where:** `src/worker.ts` `clientRegistrationEndpoint: '/register'`.
 

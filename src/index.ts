@@ -20,20 +20,22 @@ async function main(): Promise<void> {
   }
 
   const httpServer = createMcpHttpServer(() => createFitbitServer());
-  await new Promise<void>((resolve, reject) => {
+  // A second stdio client finds the port taken: it keeps stdio and leaves HTTP to the first process.
+  const listening = await new Promise<boolean>((resolve, reject) => {
     httpServer.once('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'EADDRINUSE') {
-        reject(new Error(`Port ${HTTP_PORT} is already in use on ${LOOPBACK_HOST}. Stop the other fitbit-air-mcp process.`));
+        log(`Port ${HTTP_PORT} is already in use on ${LOOPBACK_HOST}. Serving stdio only.`);
+        resolve(false);
         return;
       }
       reject(error);
     });
-    httpServer.listen(HTTP_PORT, LOOPBACK_HOST, () => resolve());
+    httpServer.listen(HTTP_PORT, LOOPBACK_HOST, () => resolve(true));
   });
-  log(`fitbit-air-mcp listening on stdio and http://${LOOPBACK_HOST}:${HTTP_PORT}/mcp`);
+  if (listening) log(`fitbit-air-mcp listening on stdio and http://${LOOPBACK_HOST}:${HTTP_PORT}/mcp`);
   const stdio = serveStdio(() => createFitbitServer());
   const shutdown = async (): Promise<void> => {
-    httpServer.close();
+    if (listening) httpServer.close();
     await stdio.close();
   };
   process.stdin.on('end', () => {

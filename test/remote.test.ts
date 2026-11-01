@@ -8,6 +8,7 @@ import { SCOPES } from '../src/constants.js';
 import { createHealthApi } from '../src/health.js';
 import { exchangeCode, googleAuthorizeUrl } from '../src/oauth.js';
 import { connectionStatus } from '../src/status.js';
+import { clientRegistrationCallback, ownerRefusal } from '../src/worker-auth.js';
 import type { RemoteToken } from '../src/tokens.js';
 
 const remote: RemoteToken = {
@@ -88,4 +89,21 @@ test('connection_status reports from the remote token when there is no token fil
   assert.equal(status.accessTokenExpiresAt, remote.expiry);
   assert.equal(status.loginDueAt, '2026-03-08T00:00:00.000Z');
   assert.equal(JSON.stringify(status).includes('remote-access'), false);
+});
+
+test('registration accepts known web hosts and loopback, and refuses any other redirect host', () => {
+  const register = (...redirect_uris: string[]) => clientRegistrationCallback({ clientMetadata: { redirect_uris }, request: new Request('https://w.example/register') });
+  assert.equal(register('https://claude.ai/api/mcp/auth_callback'), undefined);
+  assert.equal(register('http://localhost:33418/callback', 'cursor://anysphere.cursor-mcp/oauth/callback'), undefined);
+  assert.equal(register('https://chatgpt.com/connector_platform_oauth_redirect'), undefined);
+  assert.equal(register('https://claude.ai/cb', 'https://evil.example/cb')?.status, 403);
+  assert.equal(register('http://claude.ai/cb')?.status, 403);
+});
+
+test('only the owner Google account may finish the Worker sign-in', async () => {
+  const fetchImpl = (async () => Response.json({ healthUserId: '111' })) as typeof fetch;
+  const tokens = { ...remote, refreshToken: 'r' };
+  assert.equal(await ownerRefusal(tokens, '111', fetchImpl), undefined);
+  assert.match((await ownerRefusal(tokens, '222', fetchImpl))!, /not the owner/);
+  assert.match((await ownerRefusal(tokens, undefined, fetchImpl))!, /OWNER_HEALTH_USER_ID is not set.*111/);
 });

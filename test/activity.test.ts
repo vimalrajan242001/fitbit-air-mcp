@@ -103,6 +103,8 @@ test('compare_periods subtracts the published daily step counts', async () => {
   assert.equal(result.deltas.stepsCountSum, 11245 - 8430);
   assert.equal(result.deltas.distanceMillimetersSum, undefined);
   assert.equal(result.deltaMeaning, 'periodB minus periodA');
+  assert.equal(result.daysWithData.periodA.steps, 1);
+  assert.equal(result.daysWithData.periodB.distance, 0);
 });
 
 test('an auth stop on any series marks every series missing and adds no per-day gaps', async () => {
