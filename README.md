@@ -4,8 +4,8 @@ A personal [Model Context Protocol](https://modelcontextprotocol.io) server that
 
 It supports:
 - **Local stdio mode:** Launched directly by Cursor, Claude Desktop, or other stdio MCP clients.
-- **Streamable HTTP mode (`/mcp`):** Listens on `127.0.0.1:8788` for local or tunneled HTTP connections.
-- **Remote / cross-machine mode:** Exposes the `/mcp` endpoint over secure tunnels (ngrok or Cloudflare Tunnel) to connect clients running on another machine (macOS, Windows, or ChatGPT).
+- **Streamable HTTP mode (`/mcp`):** Listens on `127.0.0.1:8788` for local HTTP connections.
+- **Remote mode:** A Cloudflare Worker serves `/mcp` behind OAuth, so clients on any machine sign in from the client.
 
 The band syncs to the Google Health mobile app. This MCP server communicates with the Google Health API; it does not pair with the tracker directly and it never calls `api.fitbit.com`.
 
@@ -37,7 +37,6 @@ The band syncs to the Google Health mobile app. This MCP server communicates wit
    - OAuth 2.0 Client (Desktop app or Web app).
    - Authorized redirect URI set exactly to `http://127.0.0.1:8787`.
    - OAuth consent screen configured in **Testing** mode with your Google account added as a test user.
-3. *(Optional)* **ngrok** or **cloudflared** installed if you want to expose the server for remote cross-machine access.
 
 ---
 
@@ -123,52 +122,7 @@ Configure `~/.cursor/mcp.json` (macOS) or `%USERPROFILE%\.cursor\mcp.json` (Wind
 
 ---
 
-### Mode 2: Remote / Cross-Machine via Tunnel (ngrok or Cloudflare)
-
-> [!WARNING]
-> Tunnels expose `/mcp` with no authentication. Prefer **Mode 4: Cloudflare Workers**.
-
-Use this mode if you want to host the server on one computer (e.g., Windows PC) and connect to it from another machine (e.g., MacBook, another PC, or ChatGPT).
-
-#### 1. Start the HTTP server on the host machine
-```bash
-npm start
-```
-*The server listens on `http://127.0.0.1:8788/mcp`.*
-
-#### 2. Start the tunnel
-In a separate terminal on the host machine:
-
-* **Using ngrok:**
-  ```bash
-  npm run ngrok
-  ```
-  *(Runs ngrok rewriting the host header: `ngrok http 8788 --host-header=127.0.0.1:8788`).*
-
-* **Using Cloudflare Tunnel:**
-  ```bash
-  npm run tunnel
-  ```
-
-#### 3. Connect from the client machine
-On your second machine (Mac or Windows):
-
-* **In Cursor (`~/.cursor/mcp.json`):**
-  ```json
-  {
-    "mcpServers": {
-      "fitbit-air": {
-        "url": "https://<your-tunnel-domain>/mcp"
-      }
-    }
-  }
-  ```
-* **In ChatGPT / Custom MCP integrations:**
-  Provide the SSE/HTTP endpoint: `https://<your-tunnel-domain>/mcp`.
-
----
-
-### Mode 3: Running Standalone on a Second Machine
+### Mode 2: Running Standalone on a Second Machine
 
 If you want the second machine (Mac or Windows) to run the server completely standalone without keeping your primary computer on:
 
@@ -180,7 +134,7 @@ If you want the second machine (Mac or Windows) to run the server completely sta
 
 ---
 
-### Mode 4: Cloudflare Workers (use from anywhere, sign in from the client)
+### Mode 3: Cloudflare Workers (use from anywhere, sign in from the client)
 
 The Worker (`src/worker.ts`) is an MCP OAuth server in front of Google. When a client connects, it opens a consent page, then Google sign-in. No `npm run login`, no PC left running. It runs on the free Workers plan, and no card is needed.
 
@@ -243,7 +197,6 @@ npm run check
 
 - **`EADDRINUSE: 127.0.0.1:8788`**: A previously started server or Cursor instance is holding port 8788. Terminate the existing node process.
 - **`redirect_uri_mismatch`**: Your Google OAuth client must have `http://127.0.0.1:8787` listed under Authorized redirect URIs.
-- **403 Forbidden via Tunnel**: MCP security validates the `Host` header. Always pass `--host-header=127.0.0.1:8788` with ngrok or `--http-host-header 127.0.0.1:8788` with cloudflared (already configured in `npm run ngrok` and `npm run tunnel`).
 
 ---
 

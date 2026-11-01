@@ -16,11 +16,11 @@ Baseline: `npm run check` passes (20/20 tests, typecheck, build). `npm audit`: 0
 
 | # | Priority | Category | Issue | Effort |
 | --- | --- | --- | --- | --- |
-| 1 | P0 | Security | Tunnel modes expose `/mcp` with no authentication | S |
-| 2 | P0 | Security | Personal ngrok domain is committed in `package.json` | XS |
-| 3 | P0 | Reliability | `tokens.json` is overwritten in place, not atomically | XS |
+| 1 | P0 | Security | ~~Tunnel modes expose `/mcp` with no authentication~~ Resolved | S |
+| 2 | P0 | Security | ~~Personal ngrok domain is committed in `package.json`~~ Resolved | XS |
+| 3 | P0 | Reliability | ~~`tokens.json` is overwritten in place, not atomically~~ Resolved | XS |
 | 4 | P1 | Reliability | Every stdio launch binds port 8788; a second client dies | S |
-| 5 | P1 | Tooling | `npm run tunnel` is PowerShell-only; README says it works on Mac | XS |
+| 5 | P1 | Tooling | ~~`npm run tunnel` is PowerShell-only; README says it works on Mac~~ Resolved | XS |
 | 6 | P1 | Correctness | `compare_periods` deltas ignore unequal data coverage | S |
 | 7 | P1 | Correctness | `readToday` detects auth failures by matching message strings | XS |
 | 8 | P1 | Correctness | Error handling differs across tools and the resource | S |
@@ -42,6 +42,8 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 1. P0 — Tunnel modes expose `/mcp` with no authentication
 
+**Resolved:** tunnel mode removed (`npm run ngrok`, `npm run tunnel`, `scripts/start-tunnel.ps1`, README Mode 2). Remote access is the Worker, behind OAuth. The ngrok domain is still in git history; release it in the ngrok dashboard.
+
 **Where:** `src/http.ts`, `package.json` (`ngrok`), `scripts/start-tunnel.ps1`, README "Mode 2".
 
 **Problem:** The only protection on `/mcp` is `localhostHostValidation` plus `localhostOriginValidation`. Both tunnel scripts rewrite the Host header to `127.0.0.1:8788`, which gets past the Host check. Non-browser clients send no `Origin`, which gets past the Origin check. The README presents this as a supported mode for ChatGPT and other machines. Result: anyone who learns the tunnel URL can call `sync_status`, `sleep_nights`, `daily_activity`, and `connection_status`, and the server pays for each call with your token.
@@ -49,6 +51,8 @@ Effort: XS < 15 min, S < 1 h.
 **Fix (smallest):** Add a random secret to the path, e.g. `/mcp/<32+ random chars>`, read from the env file as `MCP_PATH_SECRET`. Compare with `crypto.timingSafeEqual`. A secret path works with every client, including ChatGPT connectors, which accept only OAuth or no auth and so can't send a static bearer header. Clients that do support headers could also use an `Authorization: Bearer` check.
 
 ### 2. P0 — Personal ngrok domain committed in `package.json`
+
+**Resolved:** tunnel mode removed (`npm run ngrok`, `npm run tunnel`, `scripts/start-tunnel.ps1`, README Mode 2). Remote access is the Worker, behind OAuth. The ngrok domain is still in git history; release it in the ngrok dashboard.
 
 **Where:** `package.json` `scripts.ngrok` (`--url=https://dangling-down-bodacious.ngrok-free.dev`).
 
@@ -61,6 +65,8 @@ Effort: XS < 15 min, S < 1 h.
 ## Reliability
 
 ### 3. P0 — `tokens.json` is not written atomically
+
+**Resolved:** `writeTokenFile` writes `tokens.json.<pid>.tmp` and renames it over `tokens.json`.
 
 **Where:** `src/tokens.ts` `writeTokenFile`.
 
@@ -81,6 +87,8 @@ Effort: XS < 15 min, S < 1 h.
 ## Correctness
 
 ### 5. P1 — `npm run tunnel` only works on Windows
+
+**Resolved:** removed with the tunnel mode (#1).
 
 **Where:** `package.json` `scripts.tunnel`, `scripts/start-tunnel.ps1`.
 
@@ -191,9 +199,6 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 17. P3 — README inaccuracies
 
-- Mode 2 says `npm run tunnel` works on the host "Mac or Windows". It's Windows-only (#5).
-- ChatGPT is described as taking an "SSE/HTTP endpoint" with no mention that it will be unauthenticated (#1).
-- The "403 Forbidden via Tunnel" tip tells users to rewrite the Host header, which disables the only protection. It should be paired with #1.
 - The Mode 1 `envFile` setting is unused: the server reads `~/.config/fitbit-air-mcp/env` itself.
 
 ---
