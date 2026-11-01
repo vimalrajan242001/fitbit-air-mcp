@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { HealthCallError } from '../src/errors.js';
 import { readToday } from '../src/today.js';
 import { fakeHealthApi, loadFixture } from './fixture.js';
 
@@ -40,4 +41,14 @@ test('today uses the account time zone and the published examples', async () => 
   assert.equal(body.includes('00:11:22:33:44:55'), false);
   assert.equal(body.includes('restingHeartRate'), false);
   assert.equal(body.includes('accessToken'), false);
+});
+
+test('today stops after an auth failure whatever its message says', async () => {
+  const api = fakeHealthApi(async (_method, path) => {
+    if (path === '/users/me/settings') return { timeZone: 'Etc/UTC' };
+    throw new HealthCallError('no_token', 'any wording');
+  });
+  const snapshot = await readToday(api, new Date('2026-03-04T15:00:00.000Z'));
+  assert.equal(snapshot.missing[0]?.reason, 'any wording');
+  assert.equal(api.calls.some((call) => call.path.includes('/sleep/') || call.path.includes('/pairedDevices')), false);
 });

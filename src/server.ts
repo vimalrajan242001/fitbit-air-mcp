@@ -32,7 +32,7 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
         'Report whether the Google Health account is linked, which scopes were granted, when the access token expires, and when Testing-mode login is due. Does not return tokens or the OAuth client.',
       inputSchema: z.object({}),
     },
-    async () => textResult(await connectionStatus(deps.configDir, api, deps.now(), deps.remote)),
+    run(() => connectionStatus(deps.configDir, api, deps.now(), deps.remote)),
   );
 
   server.registerTool(
@@ -42,7 +42,7 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
         'List paired trackers with product name, battery, last sync time, and feature flags. The hardware address is removed before this result is built.',
       inputSchema: z.object({}),
     },
-    async () => textResult(await readSyncStatus(api)),
+    run(() => readSyncStatus(api)),
   );
 
   server.registerTool(
@@ -55,13 +55,7 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
         end: dateField.optional().describe('Inclusive civil end date, YYYY-MM-DD. Defaults to start.'),
       }),
     },
-    async ({ start, end }) => {
-      try {
-        return textResult(await readDailyActivity(api, start, end ?? start));
-      } catch (error) {
-        return toolError(error);
-      }
-    },
+    run(({ start, end }) => readDailyActivity(api, start, end ?? start)),
   );
 
   server.registerTool(
@@ -75,32 +69,20 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
         detail: z.boolean().optional().describe('Include stage intervals. Honored only for a single night.'),
       }),
     },
-    async ({ start, end, detail }) => {
-      try {
-        return textResult(await readSleepNights(api, start, end ?? start, detail ?? false));
-      } catch (error) {
-        return toolError(error);
-      }
-    },
+    run(({ start, end, detail }) => readSleepNights(api, start, end ?? start, detail ?? false)),
   );
 
   server.registerTool(
     'compare_periods',
     {
       description:
-        'Run daily_activity for two inclusive ranges and return both totals and the deltas (period B minus period A). Units are unchanged: step counts, millimeters, kilocalories, and active-zone-minute sums.',
+        'Run daily_activity for two inclusive ranges and return both results and the deltas of the sums (period B minus period A). Units are unchanged: step counts, millimeters, kilocalories, and active-zone-minute sums. daysWithData gives the days per series that have data in each period; when they differ, compare per-day averages, not the deltas.',
       inputSchema: z.object({
         periodA: z.object({ start: dateField, end: dateField }),
         periodB: z.object({ start: dateField, end: dateField }),
       }),
     },
-    async ({ periodA, periodB }) => {
-      try {
-        return textResult(await comparePeriods(api, periodA, periodB));
-      } catch (error) {
-        return toolError(error);
-      }
-    },
+    run(({ periodA, periodB }) => comparePeriods(api, periodA, periodB)),
   );
 
   server.registerResource(
@@ -113,7 +95,12 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
       mimeType: 'application/json',
     },
     async (uri) => {
-      const snapshot = redact(await readToday(api, deps.now()));
+      let snapshot: unknown;
+      try {
+        snapshot = redact(await readToday(api, deps.now()));
+      } catch (error) {
+        snapshot = { missing: [{ reason: errorMessage(error) }] };
+      }
       const href = typeof uri === 'string' ? uri : uri.href;
       return {
         contents: [{ uri: href, mimeType: 'application/json', text: JSON.stringify(snapshot, null, 2) }],
@@ -124,7 +111,17 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
   return server;
 }
 
-function toolError(error: unknown): { isError: true; content: [{ type: 'text'; text: string }] } {
-  const message = error instanceof Error ? error.message : 'The tool failed.';
-  return { isError: true, content: [{ type: 'text', text: message }] };
+/** Every tool reports a thrown error the same way: an isError result, never an SDK-formatted exception. */
+function run<Args>(read: (args: Args) => Promise<unknown>) {
+  return async (args: Args) => {
+    try {
+      return textResult(await read(args));
+    } catch (error) {
+      return { isError: true as const, content: [{ type: 'text' as const, text: errorMessage(error) }] };
+    }
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'The tool failed.';
 }
