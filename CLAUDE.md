@@ -30,8 +30,6 @@ Take the first option that fully works:
 - `npm test -- test/sleep.test.ts` runs one test file.
 - `npm run login` runs the browser consent flow and exits. It does not speak MCP.
 - `npm start` serves stdio and `http://127.0.0.1:8788/mcp`.
-- `npm run ngrok` opens the public tunnel to `127.0.0.1:8788`.
-- `npm run tunnel` opens a Cloudflare Quick Tunnel to `127.0.0.1:8788`.
 
 ## Map
 

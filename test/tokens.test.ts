@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -10,6 +10,19 @@ import { readTokenFile, writeTokenFile } from '../src/tokens.js';
 test('health URLs stay on the Health API host', () => {
   assert.equal(healthUrl('/users/me/identity').href, 'https://health.googleapis.com/v4/users/me/identity');
   assert.throws(() => healthUrl('https://api.fitbit.com/1/user/-/profile.json'));
+});
+
+test('writing the token file replaces it and leaves no temp file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fitbit-air-write-'));
+  const tokens = { accessToken: 'a1', expiry: '2026-03-04T12:00:00.000Z', refreshToken: 'r1', scopes: [], refreshObtainedAt: '2026-03-03T12:00:00.000Z' };
+  try {
+    writeTokenFile(dir, tokens);
+    writeTokenFile(dir, { ...tokens, accessToken: 'a2' });
+    assert.equal(readTokenFile(dir)?.accessToken, 'a2');
+    assert.deepEqual(readdirSync(dir), ['tokens.json']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('an expired access token refreshes once and keeps the refresh time', async () => {

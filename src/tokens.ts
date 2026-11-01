@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 
 import { ACCESS_TOKEN_SKEW_MS, OAUTH_TOKEN_URL, TESTING_REFRESH_MS } from './constants.js';
 import { loadOAuthClient, type OAuthClient } from './env.js';
@@ -63,7 +63,10 @@ export function writeTokenFile(configDir: string, tokens: TokenFile): void {
     // The directory may live on a filesystem that ignores POSIX modes.
   }
   const file = tokenPath(configDir);
-  writeFileSync(file, `${JSON.stringify(tokens, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+  // Write then rename, so a crash or a second process never sees a half-written file.
+  const temp = `${file}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify(tokens, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+  renameSync(temp, file);
   chmodSync(file, 0o600);
 }
 
