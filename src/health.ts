@@ -62,7 +62,22 @@ async function request(deps: TokenDeps, method: 'GET' | 'POST', path: string, bo
   throw toHealthError(response.status, payload, token);
 }
 
-async function readHealthJson(response: Response): Promise<unknown> {
+/** Follows nextPageToken for up to maxPages and returns the items under `key`. */
+export async function paginate(fetchPage: (pageToken?: string) => Promise<unknown>, key: string, maxPages: number, coverageMessage: string): Promise<unknown[]> {
+  const items: unknown[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < maxPages; page += 1) {
+    const payload = await fetchPage(pageToken);
+    if (!isRecord(payload)) return items;
+    const batch = payload[key];
+    if (Array.isArray(batch)) items.push(...batch);
+    pageToken = typeof payload.nextPageToken === 'string' && payload.nextPageToken.length > 0 ? payload.nextPageToken : undefined;
+    if (!pageToken) return items;
+  }
+  throw new HealthCallError('http', coverageMessage);
+}
+
+export async function readHealthJson(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text) return {};
   try {
@@ -83,7 +98,7 @@ export function toHealthError(status: number, payload: unknown, token: string): 
   }
   const message = isRecord(payload) && isRecord(payload.error) && typeof payload.error.message === 'string' ? payload.error.message : '';
   const safe = message ? sanitizeText(message, [token]) : '';
-  if (!safe || safe.includes(token)) {
+  if (!safe) {
     return new HealthCallError('http', `Health API request failed (HTTP ${status}).`, status);
   }
   return new HealthCallError('http', safe, status);

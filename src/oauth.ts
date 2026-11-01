@@ -13,6 +13,7 @@ import {
 } from './constants.js';
 import { loadOAuthClient } from './env.js';
 import { findReason } from './errors.js';
+import { healthUrl, readHealthJson } from './health.js';
 import { log } from './log.js';
 import { defaultConfigDir } from './paths.js';
 import { readOauthJson, tokenFileFromResponse, writeTokenFile, oauthFailureMessage } from './tokens.js';
@@ -88,21 +89,16 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
 }
 
 async function identityResult(fetchImpl: typeof fetch, accessToken: string): Promise<LoginResult> {
-  const response = await fetchImpl('https://health.googleapis.com/v4/users/me/identity', {
+  const response = await fetchImpl(healthUrl('/users/me/identity'), {
     headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(30_000),
   });
-  const text = await response.text();
-  let payload: unknown = {};
-  if (text) {
-    try {
-      payload = JSON.parse(text) as unknown;
-    } catch {
-      return {
-        phoneSetupUnfinished: false,
-        message: `Saved the token file. The identity check failed (HTTP ${response.status}).`,
-      };
-    }
+  const payload = await readHealthJson(response).catch(() => undefined);
+  if (payload === undefined) {
+    return {
+      phoneSetupUnfinished: false,
+      message: `Saved the token file. The identity check failed (HTTP ${response.status}).`,
+    };
   }
   if (response.ok) {
     return { phoneSetupUnfinished: false, message: 'Saved the token file. The Health account is linked.' };

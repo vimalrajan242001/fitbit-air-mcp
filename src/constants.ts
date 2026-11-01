@@ -1,3 +1,6 @@
+/** Matches package.json; a test checks it. */
+export const SERVER_VERSION = '0.1.0';
+
 /** Google Health API origin and version. Paths are appended to this base. */
 export const HEALTH_API_BASE = 'https://health.googleapis.com/v4';
 

@@ -30,17 +30,17 @@ Security review: 2026-10-31. Adds the Cloudflare Worker (`src/worker.ts`, `wrang
 | 10 | P2 | Robustness | ~~No retry on 429 / 5xx~~ Resolved | S |
 | 11 | P2 | Robustness | ~~`sleep_nights` has no range cap~~ Resolved | XS |
 | 12 | P2 | Performance | ~~All Health API calls run sequentially~~ Resolved | S |
-| 13 | P3 | Maintainability | Pagination loop duplicated three times | S |
-| 14 | P3 | Maintainability | `identityResult` duplicates the Health client and hardcodes the URL | XS |
-| 15 | P3 | Maintainability | Small duplications: civil date formatting, server version, sums | XS |
-| 16 | P3 | Tooling | CI: actions pinned by tag, double runs on PR pushes | XS |
-| 17 | P3 | Docs | README inaccuracies | XS |
+| 13 | P3 | Maintainability | ~~Pagination loop duplicated three times~~ Resolved | S |
+| 14 | P3 | Maintainability | ~~`identityResult` duplicates the Health client and hardcodes the URL~~ Resolved | XS |
+| 15 | P3 | Maintainability | ~~Small duplications: civil date formatting, server version, sums~~ Resolved | XS |
+| 16 | P3 | Tooling | ~~CI: actions pinned by tag, double runs on PR pushes~~ Resolved | XS |
+| 17 | P3 | Docs | ~~README inaccuracies~~ Resolved | XS |
 | 18 | P1 | Security (Worker auth) | ~~Worker accepts any Google account~~ Resolved | S |
 | 19 | P1 | Security (Worker auth) | ~~Open client registration allows consent phishing~~ Resolved | S |
 | 20 | P2 | Security (Worker abuse) | ~~No rate limit on `/register`~~ Resolved | XS |
-| 21 | P3 | Security (local) | Local `/mcp` and the login loopback trust every local process | — |
-| 22 | P3 | Security (logging) | Worker logs and tool errors can carry codes and local paths | XS |
-| 23 | P3 | Security (CI) | Deploy job holds the Cloudflare token behind tag-pinned actions | XS |
+| 21 | P3 | Security (local) | Local `/mcp` and the login loopback trust every local process (accepted) | — |
+| 22 | P3 | Security (logging) | ~~Worker logs and tool errors can carry codes and local paths~~ Resolved | XS |
+| 23 | P3 | Security (CI) | ~~Deploy job holds the Cloudflare token behind tag-pinned actions~~ Resolved | XS |
 
 Effort: XS < 15 min, S < 1 h.
 
@@ -193,11 +193,15 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 13. P3 — Pagination loop duplicated
 
+**Resolved:** `paginate` in `src/health.ts` serves `rollUp`, `listPairedDevices`, and `reconcileSleep`.
+
 **Where:** `activity.ts` `rollUp`, `devices.ts` `listPairedDevices`, `sleep.ts` `reconcileSleep`.
 
 **Fix:** One `paginate(fetchPage, maxPages, coverageMessage)` helper in `health.ts`.
 
 ### 14. P3 — `identityResult` duplicates the Health client
+
+**Resolved:** `identityResult` uses `healthUrl` and `readHealthJson`.
 
 **Where:** `src/oauth.ts` `identityResult`.
 
@@ -206,6 +210,8 @@ Effort: XS < 15 min, S < 1 h.
 **Fix:** Use `healthUrl('/users/me/identity')` and the shared JSON reader.
 
 ### 15. P3 — Small duplications
+
+**Resolved:** `civilEndDate` uses `formatCivilDate`; the server reads `SERVER_VERSION` and a test checks it against `package.json`; `sum`, `delta`, and `defined` helpers replace the repeated blocks; the dead `safe.includes(token)` check is gone.
 
 - `sleep.ts` `civilEndDate` re-implements `formatCivilDate`.
 - `server.ts` hardcodes version `'0.1.0'`; `package.json` has it too.
@@ -218,12 +224,16 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 16. P3 — CI
 
+**Resolved:** `push` runs only on `main`; actions are pinned to commit SHAs (see #23).
+
 **Where:** `.github/workflows/check.yml`.
 
 - `on: [push, pull_request]` runs twice for PR branches. Limit `push` to `main`.
 - Actions are pinned by tag (`@v4`, `@v2`); pin to commit SHAs for supply-chain safety. The deploy job now makes this a security item: see #23.
 
 ### 17. P3 — README inaccuracies
+
+**Resolved:** the `envFile` line is gone from the Mode 1 config.
 
 - The Mode 1 `envFile` setting is unused: the server reads `~/.config/fitbit-air-mcp/env` itself.
 
@@ -265,6 +275,8 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 21. P3 — Local `/mcp` and the login loopback trust every local process
 
+**Accepted:** no change for a single-user machine.
+
 **Where:** `src/http.ts`, `src/oauth.ts` `waitForCallback`.
 
 **Problem:** `127.0.0.1:8788/mcp` has no auth, so any process or user on the same machine can read your health data. Any local process can also send a wrong `state` to `127.0.0.1:8787` and abort a login in progress. This is acceptable on a single-user machine.
@@ -273,6 +285,8 @@ Effort: XS < 15 min, S < 1 h.
 
 ### 22. P3 — Worker logs and tool errors can carry codes and local paths
 
+**Resolved:** env-file errors name `~/.config/fitbit-air-mcp/env`, not the absolute path. Worker request-URL logging is kept: the code is useless without the PKCE verifier and client secret.
+
 **Where:** `wrangler.toml` `[observability]`, `src/status.ts` (`missing[].reason`).
 
 **Problem:** With Workers observability on, the logged `/callback` request URL can include Google's one-time authorization code. The code cannot be used without the PKCE verifier and the client secret, so the risk is low. Separately, `connection_status` can return messages that include the local env-file path to the model.
@@ -280,6 +294,8 @@ Effort: XS < 15 min, S < 1 h.
 **Fix:** Optional. Turn off request-URL logging, or accept it as is. Use a fixed reason such as `env file missing` in place of the full path.
 
 ### 23. P3 — Deploy job holds the Cloudflare token behind tag-pinned actions
+
+**Resolved:** `checkout`, `setup-node`, and `gitleaks-action` are pinned to the SHAs their current tags point to, and both checkouts set `persist-credentials: false`.
 
 **Where:** `.github/workflows/check.yml` `deploy` job.
 

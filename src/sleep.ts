@@ -1,7 +1,7 @@
 import { MAX_SLEEP_DAYS, MAX_SLEEP_PAGES, SLEEP_PAGE_SIZE, WEARABLE_FAMILY } from './constants.js';
-import { addCivilDays, assertRange, eachCivilDate, parseDurationSeconds, readInt } from './dates.js';
+import { addCivilDays, assertRange, eachCivilDate, formatCivilDate, parseDurationSeconds, readInt } from './dates.js';
 import { HealthCallError, isRecord, type Missing } from './errors.js';
-import type { HealthApi } from './health.js';
+import { paginate, type HealthApi } from './health.js';
 
 const STAGE_TYPES = ['AWAKE', 'LIGHT', 'DEEP', 'REM', 'ASLEEP', 'RESTLESS'] as const;
 type StageType = (typeof STAGE_TYPES)[number];
@@ -140,7 +140,7 @@ function civilEndDate(interval: Record<string, unknown>): string | null {
   if (isRecord(civil) && isRecord(civil.date)) {
     const { year, month, day } = civil.date;
     if (typeof year === 'number' && typeof month === 'number' && typeof day === 'number') {
-      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return formatCivilDate({ year, month, day });
     }
   }
   if (typeof interval.endTime !== 'string') return null;
@@ -150,23 +150,21 @@ function civilEndDate(interval: Record<string, unknown>): string | null {
   return shifted.toISOString().slice(0, 10);
 }
 
-async function reconcileSleep(api: HealthApi, start: string, end: string): Promise<unknown[]> {
+function reconcileSleep(api: HealthApi, start: string, end: string): Promise<unknown[]> {
   const exclusiveEnd = addCivilDays(end, 1);
   const filter = `sleep.interval.civil_end_time >= "${start}" AND sleep.interval.civil_end_time < "${exclusiveEnd}"`;
-  const sessions: unknown[] = [];
-  let pageToken: string | undefined;
-  for (let page = 0; page < MAX_SLEEP_PAGES; page += 1) {
-    const params = new URLSearchParams({
-      dataSourceFamily: WEARABLE_FAMILY,
-      pageSize: String(SLEEP_PAGE_SIZE),
-      filter,
-    });
-    if (pageToken) params.set('pageToken', pageToken);
-    const payload = await api.get(`/users/me/dataTypes/sleep/dataPoints:reconcile?${params.toString()}`);
-    if (!isRecord(payload)) return sessions;
-    if (Array.isArray(payload.dataPoints)) sessions.push(...payload.dataPoints);
-    pageToken = typeof payload.nextPageToken === 'string' && payload.nextPageToken.length > 0 ? payload.nextPageToken : undefined;
-    if (!pageToken) return sessions;
-  }
-  throw new HealthCallError('http', 'paging stopped before the sleep window was covered');
+  return paginate(
+    (pageToken) => {
+      const params = new URLSearchParams({
+        dataSourceFamily: WEARABLE_FAMILY,
+        pageSize: String(SLEEP_PAGE_SIZE),
+        filter,
+      });
+      if (pageToken) params.set('pageToken', pageToken);
+      return api.get(`/users/me/dataTypes/sleep/dataPoints:reconcile?${params.toString()}`);
+    },
+    'dataPoints',
+    MAX_SLEEP_PAGES,
+    'paging stopped before the sleep window was covered',
+  );
 }

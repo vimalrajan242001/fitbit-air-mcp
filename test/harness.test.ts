@@ -4,6 +4,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
+import { SERVER_VERSION } from '../src/constants.js';
+
 test('AGENTS.md stays short and source stays free of stdout logs and the legacy host', () => {
   const agents = readFileSync('AGENTS.md', 'utf8');
   assert.ok(agents.split('\n').length < 150);
@@ -12,6 +14,10 @@ test('AGENTS.md stays short and source stays free of stdout logs and the legacy 
   assert.equal(combined.includes('console.log'), false);
   assert.equal(combined.includes('api.fitbit.com'), false);
   assert.equal(combined.includes('GOC' + 'SPX-'), false);
+});
+
+test('server version matches package.json', () => {
+  assert.equal(SERVER_VERSION, JSON.parse(readFileSync('package.json', 'utf8')).version);
 });
 
 test('secret scan passes', () => {

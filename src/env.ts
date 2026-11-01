@@ -2,6 +2,9 @@ import { chmodSync, readFileSync } from 'node:fs';
 
 import { envPath } from './paths.js';
 
+/** Errors name the documented location, not the absolute path, since tool results reach the model. */
+const ENV_HINT = '~/.config/fitbit-air-mcp/env';
+
 export type OAuthClient = {
   clientId: string;
   clientSecret: string;
@@ -13,13 +16,13 @@ export function loadOAuthClient(configDir: string): OAuthClient {
   try {
     text = readFileSync(file, 'utf8');
   } catch {
-    throw new Error(`Missing env file at ${file}. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET.`);
+    throw new Error(`Missing env file at ${ENV_HINT}. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET.`);
   }
   const values = parseEnv(text);
   const clientId = values.get('GOOGLE_OAUTH_CLIENT_ID') ?? '';
   const clientSecret = values.get('GOOGLE_OAUTH_CLIENT_SECRET') ?? '';
   if (!clientId || !clientSecret) {
-    throw new Error(`Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in ${file}.`);
+    throw new Error(`Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in ${ENV_HINT}.`);
   }
   if (
     clientId.includes('your-google-oauth-client-id') ||
@@ -27,7 +30,7 @@ export function loadOAuthClient(configDir: string): OAuthClient {
     clientSecret.includes('your-google-oauth-client-secret') ||
     clientSecret.startsWith('<')
   ) {
-    throw new Error(`Replace placeholder credentials with your Google OAuth client ID and secret in ${file}.`);
+    throw new Error(`Replace placeholder credentials with your Google OAuth client ID and secret in ${ENV_HINT}.`);
   }
   try {
     chmodSync(file, 0o600);
