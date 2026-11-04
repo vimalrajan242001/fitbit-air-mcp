@@ -9,7 +9,7 @@ import { fakeHealthApi } from './fixture.js';
 
 const date = { year: 2026, month: 3, day: 4 };
 
-test('recovery_day reads the three daily types and reports missing days per series', async () => {
+test('recovery_day reads the four daily types and reports missing days per series', async () => {
   const api = fakeHealthApi(async (_method, path) => {
     const url = new URL(path, 'https://health.googleapis.com');
     assert.equal(url.searchParams.get('dataSourceFamily'), WEARABLE_FAMILY);
@@ -21,6 +21,15 @@ test('recovery_day reads the three daily types and reports missing days per seri
       return { dataPoints: [{ dailyHeartRateVariability: { date, averageHeartRateVariabilityMilliseconds: 42.5, nonRemHeartRateBeatsPerMinute: '55' } }] };
     }
     if (url.pathname.includes('daily-oxygen-saturation')) return { dataPoints: [] };
+    if (url.pathname.includes('daily-vo2-max')) {
+      assert.equal(url.searchParams.get('filter'), 'daily_vo2_max.date >= "2026-03-04" AND daily_vo2_max.date < "2026-03-06"');
+      return {
+        dataPoints: [
+          { dailyVo2Max: { date, vo2Max: 44.6, estimated: false, cardioFitnessLevel: 'GOOD', vo2MaxCovariance: 2.1 } },
+          { dailyVo2Max: { date: { year: 2026, month: 3, day: 5 }, vo2Max: 45, estimated: 'yes', cardioFitnessLevel: 'HEALTHY' } },
+        ],
+      };
+    }
     throw new HealthCallError('missing_scope', 'missing scope', 403);
   });
   const result = await readRecoveryDays(api, '2026-03-04', '2026-03-05');
@@ -28,8 +37,10 @@ test('recovery_day reads the three daily types and reports missing days per seri
     date: '2026-03-04',
     dailyRestingHeartRate: { beatsPerMinute: 58 },
     dailyHeartRateVariability: { nonRemHeartRateBeatsPerMinute: 55, averageHeartRateVariabilityMilliseconds: 42.5 },
+    dailyVo2Max: { vo2Max: 44.6, estimated: false, cardioFitnessLevel: 'GOOD' },
   });
-  assert.deepEqual(result.days[1], { date: '2026-03-05' });
+  // A label outside the documented type or enum is dropped; the number stays.
+  assert.deepEqual(result.days[1], { date: '2026-03-05', dailyVo2Max: { vo2Max: 45 } });
   assert.deepEqual(result.missing, [
     { date: '2026-03-05', series: 'daily-resting-heart-rate', reason: 'no wearable samples' },
     { date: '2026-03-05', series: 'daily-heart-rate-variability', reason: 'no wearable samples' },
@@ -39,7 +50,7 @@ test('recovery_day reads the three daily types and reports missing days per seri
     throw new HealthCallError('missing_scope', 'missing scope', 403);
   });
   const deniedResult = await readRecoveryDays(denied, '2026-03-04', '2026-03-04');
-  assert.equal(deniedResult.missing.length, 3);
+  assert.equal(deniedResult.missing.length, 4);
   assert.ok(deniedResult.missing.every((entry) => entry.reason === 'missing scope' && !entry.date));
 });
 

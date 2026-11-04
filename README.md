@@ -19,7 +19,8 @@ The band syncs to the Google Health mobile app. This MCP server communicates wit
 | `sync_status` | Tracker product name, battery, last sync time, and feature flags |
 | `daily_activity` | Steps, distance, active zone minutes, active minutes, and total calories for up to 7 civil days, or weekly averages for up to 91 days with a 28-day baseline (`granularity: "week"`) |
 | `sleep_nights` | In-bed and asleep minutes, stage minutes, and short awakenings, or weekly main-sleep averages, median bedtime, and naps for up to 91 days (`granularity: "week"`) |
-| `recovery_day` | Resting heart rate, daily HRV, and overnight SpO2 for up to 31 civil days |
+| `recovery_day` | Resting heart rate, daily HRV, overnight SpO2, and daily VO2 max for up to 31 civil days |
+| `fitness_age` | Equivalent ages for median VO2 max and overnight HRV against population medians, each part separate with its source; descriptive, not a score |
 | `exercise_sessions` | Workouts with type, duration, and summary metrics for up to 31 days, no GPS |
 
 | Resource | What it returns |

@@ -86,7 +86,7 @@
     },
     {
       "name": "recovery_day",
-      "description": "Daily wearable recovery values for an inclusive civil range, at most 31 days: resting heart rate (beatsPerMinute), heart rate variability (average RMSSD and deep-sleep RMSSD in milliseconds, non-REM heart rate, entropy), and overnight oxygen saturation (average, confidence bounds, and standard deviation in percent). A day with no samples is missing, not zero. Values stay in the API units. Descriptive only: not a score and not a diagnosis.",
+      "description": "Daily wearable recovery values for an inclusive civil range, at most 31 days: resting heart rate (beatsPerMinute), heart rate variability (average RMSSD and deep-sleep RMSSD in milliseconds, non-REM heart rate, entropy), overnight oxygen saturation (average, confidence bounds, and standard deviation in percent), and daily VO2 max (vo2Max in ml/kg/min, estimated, and cardioFitnessLevel as the API labels it). A day with no samples is missing, not zero. Values stay in the API units. Descriptive only: not a score and not a diagnosis.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -105,6 +105,47 @@
         "required": [
           "start"
         ]
+      }
+    },
+    {
+      "name": "fitness_age",
+      "description": "Equivalent ages: the age at which a typical person of the same sex has your median daily VO2 max (FRIEND registry treadmill medians, needs 3 days) and, separately and with low confidence, your median overnight HRV (RMSSD, needs 7 nights). Each part lists its inputs and source; a part without enough data is missing, never guessed. No combined number. The window is at most 31 days and defaults to the 30 days ending today in the account time zone. Descriptive, not a score and not a diagnosis.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "start": {
+            "description": "Inclusive civil start date, YYYY-MM-DD. Defaults to 29 days before end.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "end": {
+            "description": "Inclusive civil end date, YYYY-MM-DD. Defaults to today in the account time zone.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "age": {
+            "description": "Age in years, shown next to the equivalent ages.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          },
+          "birthYear": {
+            "description": "Used for the shown age when age is not given.",
+            "type": "integer",
+            "minimum": 1900,
+            "maximum": 2100
+          },
+          "sex": {
+            "description": "Reference curve. \"unspecified\" (default) averages the male and female curves.",
+            "type": "string",
+            "enum": [
+              "male",
+              "female",
+              "unspecified"
+            ]
+          }
+        }
       }
     },
     {
