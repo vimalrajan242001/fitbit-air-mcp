@@ -1,6 +1,6 @@
 # Feature ideas
 
-Brainstorm date: 2026-11-01. Covers the five tools and `fitbit://today` as of #9. Ideas 1-4 are built (`granularity: "week"`, baseline, `compare_periods` removed); the rest are not. Items marked **Ask first** need sign-off under `CLAUDE.md` (new tool or new scope).
+Brainstorm date: 2026-11-01. Covers the five tools and `fitbit://today` as of #9. Built: 1-4 (`granularity: "week"`, baseline, `compare_periods` removed), 5 (`distance.kilometers`, `inBedHours`, `hoursAsleep`), 6 (`loginWarning`), 8 (`weekly_review` and `sleep_check` prompts), 9-10. The rest are not. Items marked **Ask first** need sign-off under `CLAUDE.md` (new tool or new scope).
 
 ## The problem
 
@@ -19,10 +19,10 @@ A 28-day live pull also showed:
 | 2 | Trends | `granularity: "week"` on `sleep_nights`: longest session per date is the main sleep, naps reported apart, median bedtime and its spread | S | — |
 | 3 | Trends | 28-day baseline (median and typical range) next to each series, worded descriptively | S | — |
 | 4 | Trends | Retire `compare_periods` once 1 lands; it mostly works around the 7-day cap | XS | — |
-| 5 | Readability | Add `km` and hours next to `millimetersSum` and minutes | XS | — |
-| 6 | Reliability | Add a `loginDue` warning to every result when the refresh token expires within 48 h | XS | — |
+| 5 | Readability | Add `km` and hours next to `millimetersSum` and minutes. **Built.** | XS | — |
+| 6 | Reliability | Add a `loginDue` warning to every result when the refresh token expires within 48 h. **Built** as `loginWarning`. | XS | — |
 | 7 | Reliability | Publish the Google app to end the 7-day Testing-mode expiry | L | Verification |
-| 8 | Workflows | MCP prompts ("weekly review", "sleep check") that chain existing tools | XS | — |
+| 8 | Workflows | MCP prompts ("weekly review", "sleep check") that chain existing tools. **Built.** | XS | — |
 | 9 | Recovery | `recovery_day`: resting heart rate, daily HRV, daily SpO2. **Built.** | M | — |
 | 10 | Recovery | `exercise_sessions`: workouts, no GPS. **Built.** | M | — |
 

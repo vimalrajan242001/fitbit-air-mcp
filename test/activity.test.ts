@@ -41,7 +41,7 @@ test('keeps a documented zero step count', async () => {
   assert.equal(result.missing.some((entry) => entry.series === 'steps'), false);
 });
 
-test('follows dailyRollUp page tokens and does not convert distance', async () => {
+test('follows dailyRollUp page tokens and keeps millimetersSum next to kilometers', async () => {
   const api = fakeHealthApi(async (_method, path, body) => {
     const payload = body as { pageToken?: string };
     if (path.includes('/steps/')) {
@@ -54,7 +54,7 @@ test('follows dailyRollUp page tokens and does not convert distance', async () =
         rollupDataPoints: [
           {
             civilStartTime: { date: { year: 2026, month: 7, day: 28 } },
-            distance: { millimetersSum: '1000' },
+            distance: { millimetersSum: '5432100' },
           },
         ],
       };
@@ -66,7 +66,8 @@ test('follows dailyRollUp page tokens and does not convert distance', async () =
     result.days.map((day) => day.steps?.countSum),
     [8430, 11245],
   );
-  assert.equal(result.days[0]?.distance?.millimetersSum, 1000);
+  assert.equal(result.days[0]?.distance?.millimetersSum, 5432100);
+  assert.equal(result.days[0]?.distance?.kilometers, 5.43);
   assert.equal(JSON.stringify(result).includes('0.62'), false);
   const stepCalls = api.calls.filter((call) => call.path.includes('/steps/'));
   assert.equal(stepCalls.length, 2);
@@ -136,7 +137,7 @@ test('maps every documented rollup field and reports a present-but-unreadable ro
     {
       date: '2026-03-01',
       steps: { countSum: 1200 },
-      distance: { millimetersSum: 900000 },
+      distance: { millimetersSum: 900000, kilometers: 0.9 },
       activeZoneMinutes: { sumInFatBurnHeartZone: 10, sumInPeakHeartZone: 2 },
       activeMinutes: { byActivityLevel: [{ activityLevel: 'LIGHT', activeMinutesSum: 30 }] },
       totalCalories: { kcalSum: 2100.5 },

@@ -38,11 +38,12 @@ const unreachable = (async () => {
   throw new Error('no network in this test');
 }) as typeof fetch;
 
-test('the tool and resource contract clients see stays the same', async () => {
+test('the tool, resource, and prompt contract clients see stays the same', async () => {
   const golden = JSON.parse(readFileSync(new URL('./fixtures/mcp-contract.json', import.meta.url), 'utf8')) as unknown;
   const tools = await rpc(unreachable, 'tools/list');
   const resources = await rpc(unreachable, 'resources/list');
-  assert.deepEqual({ tools: tools.tools, resources: resources.resources }, golden);
+  const prompts = await rpc(unreachable, 'prompts/list');
+  assert.deepEqual({ tools: tools.tools, resources: resources.resources, prompts: prompts.prompts }, golden);
 });
 
 test('a tool that throws returns an isError result with the message', async () => {
@@ -83,4 +84,11 @@ test('the today resource reports a failure as a missing entry instead of throwin
   assert.equal(content?.uri, 'fitbit://today');
   assert.equal(content?.mimeType, 'application/json');
   assert.deepEqual(JSON.parse(content!.text), { missing: [{ series: 'settings', reason: 'settings request failed' }] });
+});
+
+test('a prompt embeds the today snapshot before its instructions', async () => {
+  const result = await rpc(unreachable, 'prompts/get', { name: 'weekly_review' });
+  const [snapshot, instructions] = result.messages as Array<{ content: { resource?: { uri: string }; text?: string } }>;
+  assert.equal(snapshot?.content.resource?.uri, 'fitbit://today');
+  assert.match(instructions?.content.text ?? '', /daily_activity and sleep_nights/);
 });

@@ -26,7 +26,12 @@ The band syncs to the Google Health mobile app. This MCP server communicates wit
 | --- | --- |
 | `fitbit://today` | Snapshot of today's steps, active zone minutes, last night's sleep, and last tracker sync time |
 
-*Note: Missing days in wearable data are reported as missing, not as zero. Hardware MAC addresses are stripped before responses are returned. Credentials and tokens are never returned.*
+| Prompt | What it asks for |
+| --- | --- |
+| `weekly_review` | The last 7 full days of activity and sleep as daily averages |
+| `sleep_check` | Last night compared with the 7 nights before |
+
+*Note: Missing days in wearable data are reported as missing, not as zero. Hardware MAC addresses are stripped before responses are returned. Credentials and tokens are never returned. Within 48 hours of the 7-day login deadline, every result carries a `loginWarning`.*
 
 ---
 
