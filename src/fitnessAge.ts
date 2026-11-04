@@ -2,7 +2,7 @@ import { addCivilDays, type DateRange } from './dates.js';
 import type { Missing } from './errors.js';
 import type { HealthApi } from './health.js';
 import { readRecoveryDays } from './recovery.js';
-import { percentile, present } from './stats.js';
+import { percentile } from './stats.js';
 import { readAccountDate } from './today.js';
 
 export type Sex = 'male' | 'female' | 'unspecified';
@@ -19,13 +19,6 @@ const VO2_MAX_MEDIAN: Record<'male' | 'female', Curve> = {
   male: [[25, 48.0], [35, 42.4], [45, 37.8], [55, 32.6], [65, 28.2], [75, 24.4]],
   female: [[25, 37.6], [35, 30.2], [45, 26.7], [55, 23.4], [65, 20.0], [75, 18.3]],
 };
-
-/**
- * RMSSD (ms) by age, both sexes, with no published source: often attributed to Shaffer F, Ginsberg JP.
- * Front Public Health. 2017;5:258 (PMC5624990), but that review has no age table for RMSSD, only
- * Nunan et al.'s short-term 42 +/- 15 ms. Low confidence.
- */
-const RMSSD_MEDIAN: Curve = [[25, 60], [35, 46], [45, 36], [55, 29], [65, 23]];
 
 /** The age where a falling piecewise-linear curve reaches `value`, end slopes extended, clamped to 20-90. */
 export function ageAtValue(curve: Curve, value: number): number {
@@ -44,27 +37,27 @@ function vo2Curve(sex: Sex): Curve {
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
+const MIN_VO2_DAYS = 3;
+
 export type FitnessAgeInput = { start?: string; end?: string; age?: number; birthYear?: number; sex?: Sex };
 
 type Part = {
-  key: 'vo2max' | 'hrv';
+  key: 'vo2max';
   inputMedian: number;
   unit: string;
   days: number;
-  estimatedDays?: number;
+  estimatedDays: number;
   latestCardioFitnessLevel?: string;
   equivalentAge: number;
   reference: string;
-  confidence?: 'low';
-  caveat?: string;
 };
 
 export type FitnessAgeResult = { window?: DateRange; chronologicalAge?: number; sex: Sex; parts: Part[]; missing: Missing[]; note: string };
 
-/** Equivalent ages for VO2 max and overnight HRV against population medians. Descriptive, not a score. */
+/** The age whose population median VO2 max matches yours. Descriptive, not a score. */
 export async function readFitnessAge(api: HealthApi, now: Date, input: FitnessAgeInput): Promise<FitnessAgeResult> {
   const sex = input.sex ?? 'unspecified';
-  const note = 'Equivalent ages compare you with population medians. Not a medical result.';
+  const note = 'The equivalent age compares you with population medians. Not a medical result.';
   let end = input.end;
   if (!end) {
     const account = await readAccountDate(api, now);
@@ -76,24 +69,17 @@ export async function readFitnessAge(api: HealthApi, now: Date, input: FitnessAg
   const chronologicalAge = input.age ?? (input.birthYear === undefined ? undefined : Number(end.slice(0, 4)) - input.birthYear);
   if (chronologicalAge !== undefined && chronologicalAge < 0) throw new Error('birthYear is after the end date.');
 
-  const missing: Missing[] = [];
-  /** The median when there are at least `min` days; otherwise a missing entry, never a guess. */
-  const medianOf = (series: string, values: number[], min: number, unit: string) => {
-    if (values.length >= min) return percentile(values, 0.5);
-    const failed = values.length === 0 ? recovery.missing.find((entry) => entry.series === series && !entry.date) : undefined;
-    missing.push({ series, reason: failed?.reason ?? `${values.length} of ${min} ${unit} with data` });
-    return undefined;
-  };
-
   // The API documents vo2Max in [0, 100]; anything else is dropped.
   const vo2Days = recovery.days.filter(({ dailyVo2Max: v }) => typeof v?.vo2Max === 'number' && v.vo2Max >= 0 && v.vo2Max <= 100);
   const vo2 = vo2Days.map((day) => day.dailyVo2Max!.vo2Max as number);
-  const hrv = present(recovery.days.map((day) => day.dailyHeartRateVariability?.averageHeartRateVariabilityMilliseconds as number | undefined));
-  const vo2Median = medianOf('daily-vo2-max', vo2, 3, 'days');
-  const hrvMedian = medianOf('daily-heart-rate-variability', hrv, 7, 'nights');
-
+  const missing: Missing[] = [];
   const parts: Part[] = [];
-  if (vo2Median !== undefined) {
+  if (vo2.length < MIN_VO2_DAYS) {
+    // Too few days is a missing entry, never a guess. A failed read (such as a 403) keeps its own reason.
+    const failed = vo2.length === 0 ? recovery.missing.find((entry) => entry.series === 'daily-vo2-max' && !entry.date) : undefined;
+    missing.push({ series: 'daily-vo2-max', reason: failed?.reason ?? `${vo2.length} of ${MIN_VO2_DAYS} days with data` });
+  } else {
+    const vo2Median = percentile(vo2, 0.5);
     const latestLevel = [...vo2Days].reverse().find((day) => day.dailyVo2Max!.cardioFitnessLevel)?.dailyVo2Max!.cardioFitnessLevel as string | undefined;
     parts.push({
       key: 'vo2max',
@@ -104,19 +90,6 @@ export async function readFitnessAge(api: HealthApi, now: Date, input: FitnessAg
       ...(latestLevel ? { latestCardioFitnessLevel: latestLevel } : {}),
       equivalentAge: round1(ageAtValue(vo2Curve(sex), vo2Median)),
       reference: 'FRIEND registry treadmill 50th percentile (Kaminsky 2015, Table 3)',
-    });
-  }
-  if (hrvMedian !== undefined) {
-    parts.push({
-      key: 'hrv',
-      inputMedian: round1(hrvMedian),
-      unit: 'ms RMSSD',
-      days: hrv.length,
-      equivalentAge: round1(ageAtValue(RMSSD_MEDIAN, hrvMedian)),
-      reference: 'Unsourced age RMSSD table, same for both sexes; not found in the Shaffer & Ginsberg 2017 review it is usually attributed to',
-      confidence: 'low',
-      caveat:
-        'The API documents averageHeartRateVariabilityMilliseconds as an average RMSSD recorded during sleep, not explicitly as whole-night RMSSD; the reference values are short-term resting recordings.',
     });
   }
 

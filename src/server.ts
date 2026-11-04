@@ -122,7 +122,7 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
     'fitness_age',
     {
       description:
-        'Equivalent ages: the age at which a typical person of the same sex has your median daily VO2 max (FRIEND registry treadmill medians, needs 3 days) and, separately and with low confidence, your median overnight HRV (RMSSD, needs 7 nights). Each part lists its inputs and source; a part without enough data is missing, never guessed. No combined number. The window is at most 31 days and defaults to the 30 days ending today in the account time zone. Descriptive, not a score and not a diagnosis.',
+        'Equivalent age: the age at which a typical person of the same sex has your median daily VO2 max (FRIEND registry treadmill 50th percentile, Kaminsky 2015), with its inputs and source. Needs at least 3 days with VO2 max; with fewer it is missing, never guessed. The window is at most 31 days and defaults to the 30 days ending today in the account time zone. Descriptive, not a score and not a diagnosis.',
       inputSchema: z.object({
         start: dateField.optional().describe('Inclusive civil start date, YYYY-MM-DD. Defaults to 29 days before end.'),
         end: dateField.optional().describe('Inclusive civil end date, YYYY-MM-DD. Defaults to today in the account time zone.'),

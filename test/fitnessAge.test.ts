@@ -41,15 +41,14 @@ test('ageAtValue reads known points, interpolates, extends the end slopes, and c
   assert.equal(ageAtValue(male, 5), 90);
 });
 
-test('fitness_age reports each part with its inputs and keeps the documented VO2 max labels', async () => {
+test('fitness_age reports the VO2 max part with its inputs and the documented labels', async () => {
   const vo2 = days('2026-03-01', 3).map((date, i): [string, Record<string, unknown>] => [date, { ...documented, estimated: i === 0, vo2Max: 42.4 }]);
-  const hrv = days('2026-03-01', 7).map((date): [string, Record<string, unknown>] => [date, { averageHeartRateVariabilityMilliseconds: 46, deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds: 90 }]);
-  const api = recoveryApi({ 'daily-vo2-max': vo2, 'daily-heart-rate-variability': hrv });
+  const api = recoveryApi({ 'daily-vo2-max': vo2 });
   const result = await readFitnessAge(api, new Date('2026-03-10T12:00:00Z'), { sex: 'male', birthYear: 1990 });
   assert.deepEqual(result.window, { start: '2026-02-09', end: '2026-03-10' });
   assert.equal(result.chronologicalAge, 36);
   assert.deepEqual(result.missing, []);
-  assert.deepEqual(result.parts[0], {
+  assert.deepEqual(result.parts, [{
     key: 'vo2max',
     inputMedian: 42.4,
     unit: 'ml/kg/min',
@@ -58,11 +57,7 @@ test('fitness_age reports each part with its inputs and keeps the documented VO2
     latestCardioFitnessLevel: 'GOOD',
     equivalentAge: 35,
     reference: 'FRIEND registry treadmill 50th percentile (Kaminsky 2015, Table 3)',
-  });
-  assert.equal(result.parts[1]!.key, 'hrv');
-  assert.equal(result.parts[1]!.inputMedian, 46); // the average RMSSD, not the deep-sleep one
-  assert.equal(result.parts[1]!.equivalentAge, 35);
-  assert.equal(result.parts[1]!.confidence, 'low');
+  }]);
   assert.equal(JSON.stringify(result).includes('Covariance'), false);
 });
 
@@ -74,29 +69,25 @@ test('unspecified sex averages the two curves', async () => {
   assert.equal('chronologicalAge' in result, false);
 });
 
-test('too few days and a 403 on VO2 max become missing entries while HRV still returns', async () => {
+test('too few days and a 403 on VO2 max become missing entries, never a guess', async () => {
   const short = await readFitnessAge(
     recoveryApi({
       'daily-vo2-max': days('2026-03-01', 2).map((date): [string, Record<string, unknown>] => [date, { vo2Max: 40 }]),
-      'daily-heart-rate-variability': days('2026-03-01', 4).map((date): [string, Record<string, unknown>] => [date, { averageHeartRateVariabilityMilliseconds: 40 }]),
     }),
     new Date(),
     { start: '2026-03-01', end: '2026-03-10', sex: 'female' },
   );
   assert.deepEqual(short.parts, []);
-  assert.deepEqual(short.missing, [
-    { series: 'daily-vo2-max', reason: '2 of 3 days with data' },
-    { series: 'daily-heart-rate-variability', reason: '4 of 7 nights with data' },
-  ]);
+  assert.deepEqual(short.missing, [{ series: 'daily-vo2-max', reason: '2 of 3 days with data' }]);
 
   const denied = await readFitnessAge(
     recoveryApi({
       'daily-vo2-max': new HealthCallError('missing_scope', 'missing scope', 403),
-      'daily-heart-rate-variability': days('2026-03-01', 7).map((date): [string, Record<string, unknown>] => [date, { averageHeartRateVariabilityMilliseconds: 29 }]),
     }),
     new Date(),
     { start: '2026-03-01', end: '2026-03-10', age: 50 },
   );
   assert.deepEqual(denied.missing, [{ series: 'daily-vo2-max', reason: 'missing scope' }]);
-  assert.deepEqual(denied.parts.map((part) => [part.key, part.equivalentAge]), [['hrv', 55]]);
+  assert.deepEqual(denied.parts, []);
+  assert.equal(denied.chronologicalAge, 50);
 });
