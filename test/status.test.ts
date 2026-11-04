@@ -85,3 +85,39 @@ test('connection_status without a token file asks for login', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('connection_status reports an unreadable token file and a failed identity check without throwing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fitbit-air-broken-'));
+  try {
+    writeFileSync(join(dir, 'tokens.json'), '{not json');
+    const api = fakeHealthApi(async () => ({}));
+    const broken = await connectionStatus(dir, api, new Date('2026-03-04T00:00:00.000Z'));
+    assert.deepEqual(broken, {
+      healthAccountLinked: false,
+      phoneSetupUnfinished: false,
+      scopes: [],
+      accessTokenExpiresAt: null,
+      loginDueAt: null,
+      loginDue: true,
+      missing: [{ reason: 'The token file is not valid JSON. Run npm run login again.' }],
+    });
+
+    const now = new Date('2026-03-04T00:00:00.000Z');
+    writeTokenFile(dir, tokens(now, 60 * 60 * 1000));
+    const failing = fakeHealthApi(async () => {
+      throw new Error('socket hang up');
+    });
+    const failed = await connectionStatus(dir, failing, now);
+    assert.equal(failed.healthAccountLinked, false);
+    assert.equal(failed.phoneSetupUnfinished, false);
+    assert.equal(failed.loginDue, false);
+    assert.deepEqual(failed.missing, [{ reason: 'identity check failed' }]);
+
+    const due = fakeHealthApi(async () => {
+      throw new HealthCallError('login_due', 'login due');
+    });
+    assert.equal((await connectionStatus(dir, due, now)).loginDue, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

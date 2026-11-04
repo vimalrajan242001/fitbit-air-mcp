@@ -102,3 +102,76 @@ test('an auth stop on any series marks every series missing and adds no per-day 
   assert.equal(result.missing.length, 5);
   assert.equal(result.missing.every((entry) => entry.reason === 'phone setup unfinished' && entry.date === undefined), true);
 });
+
+test('maps every documented rollup field and reports a present-but-unreadable rollup per series', async () => {
+  const day = (dayOfMonth: number) => ({ civilStartTime: { date: { year: 2026, month: 3, day: dayOfMonth } } });
+  const rollups: Record<string, unknown[]> = {
+    steps: [{ ...day(1), steps: { countSum: '1200' } }, { ...day(2), steps: { countSum: 'n/a' } }],
+    distance: [{ ...day(1), distance: { millimetersSum: 900000 } }, { ...day(2), distance: {} }],
+    'active-zone-minutes': [
+      { ...day(1), activeZoneMinutes: { sumInFatBurnHeartZone: '10', sumInPeakHeartZone: 2 } },
+      { ...day(2), activeZoneMinutes: { unrelated: 1 } },
+    ],
+    'active-minutes': [
+      {
+        ...day(1),
+        activeMinutes: {
+          activeMinutesRollupByActivityLevel: [
+            { activityLevel: 'LIGHT', activeMinutesSum: '30' },
+            { activityLevel: 'VERY', activeMinutesSum: 'x' },
+            { activeMinutesSum: 4 },
+          ],
+        },
+      },
+      { ...day(2), activeMinutes: { activeMinutesRollupByActivityLevel: [] } },
+    ],
+    'total-calories': [{ ...day(1), totalCalories: { kcalSum: 2100.5 } }, { ...day(2), totalCalories: { kcalSum: null } }],
+  };
+  const api = fakeHealthApi(async (_method, path) => {
+    const series = /dataTypes\/([^/]+)\//.exec(path)?.[1] ?? '';
+    return { rollupDataPoints: rollups[series] ?? [] };
+  });
+  const result = await readDailyActivity(api, '2026-03-01', '2026-03-03');
+  assert.deepEqual(result.days, [
+    {
+      date: '2026-03-01',
+      steps: { countSum: 1200 },
+      distance: { millimetersSum: 900000 },
+      activeZoneMinutes: { sumInFatBurnHeartZone: 10, sumInPeakHeartZone: 2 },
+      activeMinutes: { byActivityLevel: [{ activityLevel: 'LIGHT', activeMinutesSum: 30 }] },
+      totalCalories: { kcalSum: 2100.5 },
+    },
+    { date: '2026-03-02' },
+    { date: '2026-03-03' },
+  ]);
+  assert.deepEqual(result.missing, [
+    { date: '2026-03-02', series: 'steps', reason: 'steps rollup had no countSum' },
+    { date: '2026-03-02', series: 'distance', reason: 'distance rollup had no millimetersSum' },
+    { date: '2026-03-02', series: 'active-zone-minutes', reason: 'active zone minutes rollup had no documented sums' },
+    { date: '2026-03-02', series: 'total-calories', reason: 'total calories rollup had no kcalSum' },
+    { date: '2026-03-02', series: 'active-minutes', reason: 'no wearable samples' },
+    { date: '2026-03-03', reason: 'no wearable samples' },
+  ]);
+  assert.equal(result.authStopped, undefined);
+});
+
+test('a failed series is listed once and other series still report per-day gaps', async () => {
+  const api = fakeHealthApi(async (_method, path) => {
+    if (path.includes('/total-calories/')) throw new HealthCallError('http', 'Health API request failed (HTTP 500).', 500);
+    if (path.includes('/steps/')) return publishedDay;
+    return { rollupDataPoints: [] };
+  });
+  const result = await readDailyActivity(api, '2026-02-26', '2026-02-27', ['steps', 'distance', 'total-calories']);
+  assert.deepEqual(result.missing, [
+    { series: 'total-calories', reason: 'Health API request failed (HTTP 500).' },
+    { date: '2026-02-26', series: 'distance', reason: 'no wearable samples' },
+    { date: '2026-02-27', reason: 'no wearable samples' },
+  ]);
+});
+
+test('an unexpected error is thrown, not hidden as missing', async () => {
+  const api = fakeHealthApi(async () => {
+    throw new TypeError('bug');
+  });
+  await assert.rejects(() => readDailyActivity(api, '2026-02-26', '2026-02-26'), TypeError);
+});
