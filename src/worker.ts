@@ -1,5 +1,3 @@
-import { createHash, randomBytes } from 'node:crypto';
-
 import {
   AuthorizationError,
   CimdFetchError,
@@ -14,8 +12,8 @@ import {
 import { createMcpHandler } from '@modelcontextprotocol/server';
 
 import { TESTING_REFRESH_MS } from './constants.js';
-import { HealthCallError } from './errors.js';
-import { exchangeCode, googleAuthorizeUrl } from './oauth.js';
+import { HealthCallError, errorMessage } from './errors.js';
+import { createPkcePair, exchangeCode, googleAuthorizeUrl } from './oauth.js';
 import { createFitbitServer } from './server.js';
 import { refreshAccessToken, type TokenFile } from './tokens.js';
 import { clientRegistrationCallback, ownerRefusal } from './worker-auth.js';
@@ -53,70 +51,11 @@ export const apiHandler = {
 /** /authorize (consent, then Google) and /callback (Google back to the MCP client). */
 export const defaultHandler = {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const oauth = env.OAUTH_PROVIDER;
-    const redirectUri = `${env.PUBLIC_URL}/callback`;
-    const toGoogle = async (authRequest: AuthRequest, extra: Headers): Promise<Response> => {
-      const verifier = randomBytes(32).toString('base64url');
-      const { state, headers } = await oauth.beginUpstream(authRequest, { data: { verifier }, headers: extra });
-      const challenge = createHash('sha256').update(verifier).digest('base64url');
-      headers.set('Location', googleAuthorizeUrl({ clientId: env.GOOGLE_OAUTH_CLIENT_ID, redirectUri, challenge, state }).toString());
-      return new Response(null, { status: 302, headers });
-    };
+    const route = `${request.method} ${new URL(request.url).pathname}`;
     try {
-      if (url.pathname === '/authorize' && request.method === 'GET') {
-        const authRequest = await oauth.parseAuthRequest(request);
-        if (await oauth.isConsentRemembered(request, authRequest, { secret: env.CONSENT_SECRET })) {
-          return toGoogle(authRequest, new Headers());
-        }
-        const details = await oauth.describeConsent(authRequest);
-        const consent = await oauth.beginConsent(authRequest);
-        consent.headers.set('Content-Type', 'text/html; charset=utf-8');
-        return new Response(consentPage(details, consent.handle), { headers: consent.headers });
-      }
-      if (url.pathname === '/authorize' && request.method === 'POST') {
-        const form = await request.formData();
-        const handle = String(form.get('handle'));
-        if (form.get('decision') !== 'approve') {
-          const denied = await oauth.denyConsent(request, handle);
-          return new Response(null, { status: 302, headers: denied.headers });
-        }
-        const approved = await oauth.approveConsent(request, handle, { remember: { secret: env.CONSENT_SECRET } });
-        return toGoogle(approved.request, approved.headers);
-      }
-      if (url.pathname === '/callback' && request.method === 'GET') {
-        const { request: original, data, headers } = await oauth.finishUpstream<{ verifier: string }>(request);
-        const code = url.searchParams.get('code');
-        if (!code) {
-          headers.set('Location', authorizationErrorRedirect(original, 'access_denied'));
-          return new Response(null, { status: 302, headers });
-        }
-        let tokens: TokenFile;
-        try {
-          tokens = await exchangeCode({
-            fetchImpl,
-            redirectUri,
-            now: new Date(),
-            clientId: env.GOOGLE_OAUTH_CLIENT_ID,
-            clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
-            code,
-            verifier: data.verifier,
-          });
-        } catch (error) {
-          return text(error instanceof Error ? error.message : 'Google sign-in failed.', 502);
-        }
-        const refusal = await ownerRefusal(tokens, env.OWNER_HEALTH_USER_ID, fetchImpl);
-        if (refusal) return text(refusal, 403);
-        const { redirectTo } = await oauth.completeAuthorization({
-          request: original,
-          userId: OWNER,
-          metadata: {},
-          scope: original.scope,
-          props: tokens,
-        });
-        headers.set('Location', redirectTo);
-        return new Response(null, { status: 302, headers });
-      }
+      if (route === 'GET /authorize') return await showConsent(request, env);
+      if (route === 'POST /authorize') return await decideConsent(request, env);
+      if (route === 'GET /callback') return await finishGoogleSignIn(request, env);
       return text('Not found', 404);
     } catch (error) {
       if (error instanceof AuthorizationError && error.redirectTo) return Response.redirect(error.redirectTo, 302);
@@ -126,6 +65,79 @@ export const defaultHandler = {
     }
   },
 };
+
+/** GET /authorize: skip straight to Google when consent is remembered, else show the consent page. */
+async function showConsent(request: Request, env: Env): Promise<Response> {
+  const oauth = env.OAUTH_PROVIDER;
+  const authRequest = await oauth.parseAuthRequest(request);
+  if (await oauth.isConsentRemembered(request, authRequest, { secret: env.CONSENT_SECRET })) {
+    return redirectToGoogle(env, authRequest, new Headers());
+  }
+  const details = await oauth.describeConsent(authRequest);
+  const consent = await oauth.beginConsent(authRequest);
+  consent.headers.set('Content-Type', 'text/html; charset=utf-8');
+  return new Response(consentPage(details, consent.handle), { headers: consent.headers });
+}
+
+/** POST /authorize: the consent form. Deny goes back to the client; allow goes on to Google. */
+async function decideConsent(request: Request, env: Env): Promise<Response> {
+  const oauth = env.OAUTH_PROVIDER;
+  const form = await request.formData();
+  const handle = String(form.get('handle'));
+  if (form.get('decision') !== 'approve') {
+    const denied = await oauth.denyConsent(request, handle);
+    return new Response(null, { status: 302, headers: denied.headers });
+  }
+  const approved = await oauth.approveConsent(request, handle, { remember: { secret: env.CONSENT_SECRET } });
+  return redirectToGoogle(env, approved.request, approved.headers);
+}
+
+/** GET /callback: trade Google's code, check the account is the owner, then complete the MCP client's grant. */
+async function finishGoogleSignIn(request: Request, env: Env): Promise<Response> {
+  const { request: original, data, headers } = await env.OAUTH_PROVIDER.finishUpstream<{ verifier: string }>(request);
+  const code = new URL(request.url).searchParams.get('code');
+  if (!code) {
+    headers.set('Location', authorizationErrorRedirect(original, 'access_denied'));
+    return new Response(null, { status: 302, headers });
+  }
+  let tokens: TokenFile;
+  try {
+    tokens = await exchangeCode({
+      fetchImpl,
+      redirectUri: callbackUrl(env),
+      now: new Date(),
+      clientId: env.GOOGLE_OAUTH_CLIENT_ID,
+      clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+      code,
+      verifier: data.verifier,
+    });
+  } catch (error) {
+    return text(errorMessage(error, 'Google sign-in failed.'), 502);
+  }
+  const refusal = await ownerRefusal(tokens, env.OWNER_HEALTH_USER_ID, fetchImpl);
+  if (refusal) return text(refusal, 403);
+  const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
+    request: original,
+    userId: OWNER,
+    metadata: {},
+    scope: original.scope,
+    props: tokens,
+  });
+  headers.set('Location', redirectTo);
+  return new Response(null, { status: 302, headers });
+}
+
+/** Starts the upstream Google sign-in with a fresh PKCE verifier kept in the library's state. */
+async function redirectToGoogle(env: Env, authRequest: AuthRequest, extra: Headers): Promise<Response> {
+  const { verifier, challenge } = createPkcePair();
+  const { state, headers } = await env.OAUTH_PROVIDER.beginUpstream(authRequest, { data: { verifier }, headers: extra });
+  headers.set('Location', googleAuthorizeUrl({ clientId: env.GOOGLE_OAUTH_CLIENT_ID, redirectUri: callbackUrl(env), challenge, state }).toString());
+  return new Response(null, { status: 302, headers });
+}
+
+function callbackUrl(env: Env): string {
+  return `${env.PUBLIC_URL}/callback`;
+}
 
 /** Keeps our access token no longer-lived than Google's, and refreshes Google's on refresh_token. */
 export async function tokenExchangeCallback({ grantType, props, env }: TokenExchangeCallbackOptions<Env>) {

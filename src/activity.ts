@@ -1,25 +1,8 @@
 import { MAX_ACTIVITY_DAYS, MAX_ACTIVITY_PAGES, WEARABLE_FAMILY } from './constants.js';
-import {
-  assertRange,
-  closedOpenRange,
-  eachCivilDate,
-  formatCivilDate,
-  readFinite,
-  readInt,
-  type CivilParts,
-} from './dates.js';
-import { HealthCallError, isRecord, type Missing } from './errors.js';
-import { paginate, type HealthApi } from './health.js';
-
-export const ACTIVITY_SERIES = [
-  'steps',
-  'distance',
-  'active-zone-minutes',
-  'active-minutes',
-  'total-calories',
-] as const;
-
-export type ActivitySeries = (typeof ACTIVITY_SERIES)[number];
+import { assertRange, civilDateOf, closedOpenRange, eachCivilDate, type DateRange } from './dates.js';
+import { expectHealthError, type HealthCallError, type Missing } from './errors.js';
+import { paginate, type HealthApi, type WearableResult } from './health.js';
+import { isRecord, readFinite, readInt } from './parse.js';
 
 export type ActivityDay = {
   date: string;
@@ -34,23 +17,75 @@ export type ActivityDay = {
   totalCalories?: { kcalSum: number };
 };
 
-export type ActivityResult = {
-  range: { start: string; end: string };
-  dataSourceFamily: typeof WEARABLE_FAMILY;
+export type ActivityResult = WearableResult & {
   days: ActivityDay[];
-  missing: Missing[];
   /** Set when the account needs login or linking, so later calls would fail the same way. */
   authStopped?: true;
 };
 
-type RollupPoint = {
-  civilStartTime?: { date?: Partial<CivilParts> };
-  steps?: { countSum?: unknown };
-  distance?: { millimetersSum?: unknown };
-  activeZoneMinutes?: Record<string, unknown>;
-  activeMinutes?: { activeMinutesRollupByActivityLevel?: unknown };
-  totalCalories?: { kcalSum?: unknown };
+type ActivityField = Exclude<keyof ActivityDay, 'date'>;
+
+type SeriesSpec<F extends ActivityField> = {
+  /** The key on both the rollup data point and ActivityDay. */
+  field: F;
+  /** Copies the documented fields, or undefined when none can be read. */
+  parse: (rollup: Record<string, unknown>) => ActivityDay[F] | undefined;
+  /** Reported when a rollup is present but unreadable. Without it the day is just reported as having no samples. */
+  unreadable?: string;
 };
+
+/**
+ * One entry per documented dailyRollUp data type. To add a series, add its type name and spec here
+ * and its field to ActivityDay; reading, paging, and gap reporting follow from the table.
+ */
+const SERIES = {
+  steps: {
+    field: 'steps',
+    parse: (rollup) => optional(readInt(rollup.countSum), (countSum) => ({ countSum })),
+    unreadable: 'steps rollup had no countSum',
+  } satisfies SeriesSpec<'steps'>,
+  distance: {
+    field: 'distance',
+    parse: (rollup) => optional(readInt(rollup.millimetersSum), (millimetersSum) => ({ millimetersSum })),
+    unreadable: 'distance rollup had no millimetersSum',
+  } satisfies SeriesSpec<'distance'>,
+  'active-zone-minutes': {
+    field: 'activeZoneMinutes',
+    parse: (rollup) => {
+      const sums = Object.fromEntries(
+        (['sumInFatBurnHeartZone', 'sumInCardioHeartZone', 'sumInPeakHeartZone'] as const)
+          .map((key) => [key, readInt(rollup[key])] as const)
+          .filter((entry) => entry[1] !== undefined),
+      );
+      return Object.keys(sums).length > 0 ? sums : undefined;
+    },
+    unreadable: 'active zone minutes rollup had no documented sums',
+  } satisfies SeriesSpec<'activeZoneMinutes'>,
+  'active-minutes': {
+    field: 'activeMinutes',
+    parse: (rollup) => {
+      const levels = rollup.activeMinutesRollupByActivityLevel;
+      if (!Array.isArray(levels)) return undefined;
+      const byActivityLevel = levels.flatMap((entry) => {
+        if (!isRecord(entry) || typeof entry.activityLevel !== 'string') return [];
+        const activeMinutesSum = readInt(entry.activeMinutesSum);
+        return activeMinutesSum === undefined ? [] : [{ activityLevel: entry.activityLevel, activeMinutesSum }];
+      });
+      return byActivityLevel.length > 0 ? { byActivityLevel } : undefined;
+    },
+  } satisfies SeriesSpec<'activeMinutes'>,
+  'total-calories': {
+    field: 'totalCalories',
+    parse: (rollup) => optional(readFinite(rollup.kcalSum), (kcalSum) => ({ kcalSum })),
+    unreadable: 'total calories rollup had no kcalSum',
+  } satisfies SeriesSpec<'totalCalories'>,
+} as const;
+
+export type ActivitySeries = keyof typeof SERIES;
+
+export const ACTIVITY_SERIES = Object.keys(SERIES) as ActivitySeries[];
+
+const NO_SAMPLES = 'no wearable samples';
 
 export async function readDailyActivity(
   api: HealthApi,
@@ -60,145 +95,74 @@ export async function readDailyActivity(
   maxDays = MAX_ACTIVITY_DAYS,
 ): Promise<ActivityResult> {
   assertRange(start, end, maxDays);
-  const dates = eachCivilDate(start, end);
-  const days = new Map<string, ActivityDay>(dates.map((date) => [date, { date }]));
-  const missing: Missing[] = [];
-  const failed = new Set<ActivitySeries>();
-  let authStopped = false;
+  const range = { start, end };
+  const days = eachCivilDate(start, end).map((date): ActivityDay => ({ date }));
+  const result: ActivityResult = { range, dataSourceFamily: WEARABLE_FAMILY, days, missing: [] };
 
-  const results = await Promise.allSettled(series.map((name) => rollUp(api, name, start, end)));
-  const unexpected = results.find((result) => result.status === 'rejected' && !(result.reason instanceof HealthCallError));
-  if (unexpected?.status === 'rejected') throw unexpected.reason;
-  const authError = results.find(
-    (result) => result.status === 'rejected' && ['not_linked', 'no_token', 'login_due'].includes((result.reason as HealthCallError).kind),
-  );
-  if (authError?.status === 'rejected') {
-    for (const name of series) missing.push({ series: name, reason: (authError.reason as HealthCallError).message });
-    authStopped = true;
-  } else {
-    results.forEach((result, index) => {
-      const name = series[index]!;
-      if (result.status === 'rejected') {
-        failed.add(name);
-        missing.push({ series: name, reason: (result.reason as HealthCallError).message });
-        return;
-      }
-      for (const point of result.value) {
-        const date = civilDateOf(point);
-        const day = date ? days.get(date) : undefined;
-        if (!day) continue;
-        applyPoint(day, name, point, missing);
-      }
-    });
+  const settled = await Promise.allSettled(series.map((name) => rollUp(api, name, range)));
+  const failures = settled.map((outcome) => (outcome.status === 'rejected' ? expectHealthError(outcome.reason) : undefined));
+
+  const authFailure = failures.find((failure) => failure?.stopsAllReads);
+  if (authFailure) {
+    result.missing = series.map((name) => ({ series: name, reason: authFailure.message }));
+    result.authStopped = true;
+    return result;
   }
 
-  if (!authStopped) for (const date of dates) {
-    const day = days.get(date)!;
-    const absent = series.filter((name) => !failed.has(name) && !hasSeries(day, name) && !missing.some((entry) => entry.date === date && entry.series === name));
-    if (absent.length === 0) continue;
-    if (absent.length === series.filter((name) => !failed.has(name)).length) {
-      missing.push({ date, reason: 'no wearable samples' });
-    } else {
-      for (const name of absent) missing.push({ date, series: name, reason: 'no wearable samples' });
+  const byDate = new Map(days.map((day) => [day.date, day]));
+  const read: ActivitySeries[] = [];
+  settled.forEach((outcome, index) => {
+    const name = series[index]!;
+    if (outcome.status === 'rejected') {
+      result.missing.push({ series: name, reason: (failures[index] as HealthCallError).message });
+      return;
     }
-  }
-
-  const result: ActivityResult = {
-    range: { start, end },
-    dataSourceFamily: WEARABLE_FAMILY,
-    days: dates.map((date) => days.get(date)!),
-    missing,
-  };
-  if (authStopped) result.authStopped = true;
+    read.push(name);
+    for (const point of outcome.value) {
+      const day = byDate.get(civilDateOf(point.civilStartTime, undefined, undefined) ?? '');
+      if (day) applyRollup(day, name, point, result.missing);
+    }
+  });
+  result.missing.push(...dailyGaps(days, read, result.missing));
   return result;
 }
 
-async function rollUp(api: HealthApi, series: ActivitySeries, start: string, end: string): Promise<RollupPoint[]> {
-  const range = closedOpenRange(start, end);
-  const points = await paginate(
-    (pageToken) => {
-      const body: Record<string, unknown> = {
-        range,
-        windowSizeDays: 1,
-        dataSourceFamily: WEARABLE_FAMILY,
-      };
-      if (pageToken) body.pageToken = pageToken;
-      return api.post(`/users/me/dataTypes/${series}/dataPoints:dailyRollUp`, body);
-    },
+function rollUp(api: HealthApi, series: ActivitySeries, range: DateRange): Promise<Array<Record<string, unknown>>> {
+  const body = { range: closedOpenRange(range.start, range.end), windowSizeDays: 1, dataSourceFamily: WEARABLE_FAMILY };
+  return paginate(
+    (pageToken) => api.post(`/users/me/dataTypes/${series}/dataPoints:dailyRollUp`, pageToken ? { ...body, pageToken } : body),
     'rollupDataPoints',
     MAX_ACTIVITY_PAGES,
     'paging stopped before the range was covered',
-  );
-  return points.filter(isRecord) as RollupPoint[];
+  ).then((points) => points.filter(isRecord));
 }
 
-function civilDateOf(point: RollupPoint): string | undefined {
-  const date = point.civilStartTime?.date;
-  if (!date || typeof date.year !== 'number' || typeof date.month !== 'number' || typeof date.day !== 'number') return undefined;
-  return formatCivilDate({ year: date.year, month: date.month, day: date.day });
+function applyRollup(day: ActivityDay, series: ActivitySeries, point: Record<string, unknown>, missing: Missing[]): void {
+  const spec: SeriesSpec<ActivityField> = SERIES[series];
+  const rollup = point[spec.field];
+  if (!rollup) return;
+  const value = isRecord(rollup) ? spec.parse(rollup) : undefined;
+  if (value !== undefined) {
+    (day as Record<ActivityField, unknown>)[spec.field] = value;
+  } else if (spec.unreadable) {
+    missing.push({ date: day.date, series, reason: spec.unreadable });
+  }
 }
 
-function applyPoint(day: ActivityDay, series: ActivitySeries, point: RollupPoint, missing: Missing[]): void {
-  if (series === 'steps') {
-    if (!point.steps) return;
-    const countSum = readInt(point.steps.countSum);
-    if (countSum === undefined) {
-      missing.push({ date: day.date, series, reason: 'steps rollup had no countSum' });
-      return;
-    }
-    day.steps = { countSum };
-    return;
+/** A day with none of the read series is one entry; otherwise each absent series that was not already explained. */
+function dailyGaps(days: ActivityDay[], read: ActivitySeries[], explained: Missing[]): Missing[] {
+  const gaps: Missing[] = [];
+  for (const day of days) {
+    const absent = read.filter(
+      (name) => day[SERIES[name].field] === undefined && !explained.some((entry) => entry.date === day.date && entry.series === name),
+    );
+    if (absent.length === 0) continue;
+    if (absent.length === read.length) gaps.push({ date: day.date, reason: NO_SAMPLES });
+    else gaps.push(...absent.map((name) => ({ date: day.date, series: name, reason: NO_SAMPLES })));
   }
-  if (series === 'distance') {
-    if (!point.distance) return;
-    const millimetersSum = readInt(point.distance.millimetersSum);
-    if (millimetersSum === undefined) {
-      missing.push({ date: day.date, series, reason: 'distance rollup had no millimetersSum' });
-      return;
-    }
-    day.distance = { millimetersSum };
-    return;
-  }
-  if (series === 'total-calories') {
-    if (!point.totalCalories) return;
-    const kcalSum = readFinite(point.totalCalories.kcalSum);
-    if (kcalSum === undefined) {
-      missing.push({ date: day.date, series, reason: 'total calories rollup had no kcalSum' });
-      return;
-    }
-    day.totalCalories = { kcalSum };
-    return;
-  }
-  if (series === 'active-zone-minutes') {
-    if (!point.activeZoneMinutes) return;
-    const zone = {
-      sumInFatBurnHeartZone: readInt(point.activeZoneMinutes.sumInFatBurnHeartZone),
-      sumInCardioHeartZone: readInt(point.activeZoneMinutes.sumInCardioHeartZone),
-      sumInPeakHeartZone: readInt(point.activeZoneMinutes.sumInPeakHeartZone),
-    };
-    const present = Object.fromEntries(Object.entries(zone).filter((entry) => entry[1] !== undefined));
-    if (Object.keys(present).length === 0) {
-      missing.push({ date: day.date, series, reason: 'active zone minutes rollup had no documented sums' });
-      return;
-    }
-    day.activeZoneMinutes = present;
-    return;
-  }
-  if (!point.activeMinutes || !Array.isArray(point.activeMinutes.activeMinutesRollupByActivityLevel)) return;
-  const byActivityLevel = point.activeMinutes.activeMinutesRollupByActivityLevel.flatMap((entry) => {
-    if (!isRecord(entry) || typeof entry.activityLevel !== 'string') return [];
-    const activeMinutesSum = readInt(entry.activeMinutesSum);
-    if (activeMinutesSum === undefined) return [];
-    return [{ activityLevel: entry.activityLevel, activeMinutesSum }];
-  });
-  if (byActivityLevel.length === 0) return;
-  day.activeMinutes = { byActivityLevel };
+  return gaps;
 }
 
-function hasSeries(day: ActivityDay, series: ActivitySeries): boolean {
-  if (series === 'steps') return day.steps !== undefined;
-  if (series === 'distance') return day.distance !== undefined;
-  if (series === 'active-zone-minutes') return day.activeZoneMinutes !== undefined;
-  if (series === 'active-minutes') return day.activeMinutes !== undefined;
-  return day.totalCalories !== undefined;
+function optional<T, R>(value: T | undefined, wrap: (value: T) => R): R | undefined {
+  return value === undefined ? undefined : wrap(value);
 }

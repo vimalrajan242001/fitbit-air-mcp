@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { addCivilDays, eachCivilDate, formatCivilDate, type CivilParts } from '../src/dates.js';
-import { percentile, readActivityWeeks, readSleepWeeks } from '../src/trends.js';
+import { percentile } from '../src/stats.js';
+import { readActivityWeeks, readSleepWeeks } from '../src/trends.js';
 import { fakeHealthApi } from './fixture.js';
 
 type RangeBody = { range: { start: { date: CivilParts }; end: { date: CivilParts } } };

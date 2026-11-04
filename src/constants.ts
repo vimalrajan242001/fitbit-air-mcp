@@ -32,8 +32,8 @@ export const MAX_ACTIVITY_DAYS = 7;
 /** Weekly reads use the full 14-day rollup range: 7 chunks of 5 series stays under the Workers free-plan 50 subrequests. */
 export const MAX_ROLLUP_DAYS = 14;
 
-/** Keeps a sleep read to a few pages and a result the model can hold. */
-export const MAX_SLEEP_DAYS = 31;
+/** Keeps a reconcile read (sleep, exercise, recovery) to a few pages and a result the model can hold. */
+export const MAX_RECONCILE_DAYS = 31;
 
 /** Weekly trend reads: 13 weeks, paged inside the server. */
 export const MAX_TREND_DAYS = 91;
@@ -41,12 +41,25 @@ export const MAX_TREND_DAYS = 91;
 /** Days behind a baseline, ending at the range end. */
 export const BASELINE_DAYS = 28;
 
-/** Sleep and exercise pages are capped at 25 sessions. */
-export const SLEEP_PAGE_SIZE = 25;
-export const MAX_SLEEP_PAGES = 25;
+/** Reconcile pages hold at most 25 sessions. */
+export const RECONCILE_PAGE_SIZE = 25;
+export const MAX_RECONCILE_PAGES = 25;
 export const MAX_ACTIVITY_PAGES = 10;
+export const PAIRED_DEVICE_PAGE_SIZE = 100;
+export const MAX_PAIRED_DEVICE_PAGES = 10;
 
+/** Treat an access token this close to expiry as expired. */
 export const ACCESS_TOKEN_SKEW_MS = 60_000;
+
+/** Per-request timeout for Google calls. */
+export const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Longest wait honored from a Retry-After header, and the wait when there is none. */
+export const MAX_RETRY_AFTER_MS = 5_000;
+export const DEFAULT_RETRY_MS = 1_000;
+
+/** How long `npm run login` waits for the browser redirect. */
+export const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
 export const REDIRECT_MISMATCH_MESSAGE =
   'The OAuth client is a Web client and http://127.0.0.1:8787 must be added exactly.';

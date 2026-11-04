@@ -1,14 +1,15 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { spawn } from 'node:child_process';
 
 import {
+  LOGIN_TIMEOUT_MS,
+  LOOPBACK_HOST,
   OAUTH_AUTHORIZE_URL,
   OAUTH_PORT,
-  OAUTH_TOKEN_URL,
-  LOOPBACK_HOST,
   REDIRECT_MISMATCH_MESSAGE,
   REDIRECT_URI,
+  REQUEST_TIMEOUT_MS,
   SCOPES,
 } from './constants.js';
 import { loadOAuthClient } from './env.js';
@@ -16,7 +17,7 @@ import { findReason } from './errors.js';
 import { healthUrl, readHealthJson } from './health.js';
 import { log } from './log.js';
 import { defaultConfigDir } from './paths.js';
-import { readOauthJson, tokenFileFromResponse, writeTokenFile, oauthFailureMessage } from './tokens.js';
+import { oauthFailureMessage, postTokenEndpoint, tokenFileFromResponse, writeTokenFile, type TokenFile } from './tokens.js';
 
 export type LoginResult = {
   phoneSetupUnfinished: boolean;
@@ -33,54 +34,52 @@ export type LoginOptions = {
 
 type CallbackQuery = { code: string; state: string };
 
+/** A PKCE S256 pair: the verifier stays here, the challenge goes to Google. */
+export function createPkcePair(): { verifier: string; challenge: string } {
+  const verifier = randomBytes(32).toString('base64url');
+  return { verifier, challenge: createHash('sha256').update(verifier).digest('base64url') };
+}
+
 /** Google consent URL for the five read scopes, PKCE S256, offline access. */
 export function googleAuthorizeUrl(input: { clientId: string; redirectUri: string; challenge: string; state: string }): URL {
   const authorize = new URL(OAUTH_AUTHORIZE_URL);
-  authorize.searchParams.set('client_id', input.clientId);
-  authorize.searchParams.set('redirect_uri', input.redirectUri);
-  authorize.searchParams.set('response_type', 'code');
-  authorize.searchParams.set('scope', SCOPES.join(' '));
-  authorize.searchParams.set('code_challenge', input.challenge);
-  authorize.searchParams.set('code_challenge_method', 'S256');
-  authorize.searchParams.set('access_type', 'offline');
-  authorize.searchParams.set('prompt', 'consent');
-  authorize.searchParams.set('state', input.state);
+  const params = {
+    client_id: input.clientId,
+    redirect_uri: input.redirectUri,
+    response_type: 'code',
+    scope: SCOPES.join(' '),
+    code_challenge: input.challenge,
+    code_challenge_method: 'S256',
+    // offline + consent make Testing mode issue a refresh token every time.
+    access_type: 'offline',
+    prompt: 'consent',
+    state: input.state,
+  };
+  for (const [key, value] of Object.entries(params)) authorize.searchParams.set(key, value);
   return authorize;
 }
 
+/** The `npm run login` flow: consent in the browser, a loopback redirect, then the token file. */
 export async function login(options: LoginOptions = {}): Promise<LoginResult> {
   const configDir = options.configDir ?? defaultConfigDir();
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const now = options.now ?? (() => new Date());
-  const timeoutMs = options.timeoutMs ?? 5 * 60 * 1000;
   const client = loadOAuthClient(configDir);
-  const verifier = randomBytes(32).toString('base64url');
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const { verifier, challenge } = createPkcePair();
   const state = randomBytes(16).toString('base64url');
-  const authorize = googleAuthorizeUrl({ clientId: client.clientId, redirectUri: REDIRECT_URI, challenge, state });
+  const authorize = googleAuthorizeUrl({ clientId: client.clientId, redirectUri: REDIRECT_URI, challenge, state }).toString();
 
   const server = createServer();
   try {
     await listen(server);
-    const callback = waitForCallback(server, state, timeoutMs);
-    const settled = callback.then(
-      (value) => ({ ok: true as const, value }),
-      (error: unknown) => ({ ok: false as const, error }),
-    );
+    const callback = waitForCallback(server, state, options.timeoutMs ?? LOGIN_TIMEOUT_MS);
+    // Awaited below; this only stops a redirect that fails while the browser opens from being an unhandled rejection.
+    callback.catch(() => undefined);
     log('Opening the browser for Google consent. If it does not open, use the URL on the next line.');
-    log(authorize.toString());
-    await Promise.resolve((options.openUrl ?? openSystemBrowser)(authorize.toString()));
-    const outcome = await settled;
-    if (!outcome.ok) throw outcome.error;
-    const granted = outcome.value;
-    const tokens = await exchangeCode({
-      fetchImpl,
-      now: now(),
-      clientId: client.clientId,
-      clientSecret: client.clientSecret,
-      code: granted.code,
-      verifier,
-    });
+    log(authorize);
+    await (options.openUrl ?? openSystemBrowser)(authorize);
+    const { code } = await callback;
+    const tokens = await exchangeCode({ fetchImpl, now: now(), clientId: client.clientId, clientSecret: client.clientSecret, code, verifier });
     writeTokenFile(configDir, tokens);
     return identityResult(fetchImpl, tokens.accessToken);
   } finally {
@@ -88,34 +87,27 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
   }
 }
 
+/** Reports whether the Google Health app has linked this account. The token file is already saved either way. */
 async function identityResult(fetchImpl: typeof fetch, accessToken: string): Promise<LoginResult> {
   const response = await fetchImpl(healthUrl('/users/me/identity'), {
     headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const payload = await readHealthJson(response).catch(() => undefined);
-  if (payload === undefined) {
-    return {
-      phoneSetupUnfinished: false,
-      message: `Saved the token file. The identity check failed (HTTP ${response.status}).`,
-    };
-  }
-  if (response.ok) {
+  if (payload !== undefined && response.ok) {
     return { phoneSetupUnfinished: false, message: 'Saved the token file. The Health account is linked.' };
   }
-  if (response.status === 400 && findReason(payload) === 'ACCOUNT_NOT_LINKED') {
+  if (payload !== undefined && response.status === 400 && findReason(payload) === 'ACCOUNT_NOT_LINKED') {
     return {
       phoneSetupUnfinished: true,
       message:
         'Saved the token file. Phone setup unfinished. Open the Google Health app, finish linking this Google account, then run npm run login again.',
     };
   }
-  return {
-    phoneSetupUnfinished: false,
-    message: `Saved the token file. The identity check failed (HTTP ${response.status}).`,
-  };
+  return { phoneSetupUnfinished: false, message: `Saved the token file. The identity check failed (HTTP ${response.status}).` };
 }
 
+/** Trades an authorization code for tokens. Errors are sanitized of the secret, code, and verifier. */
 export async function exchangeCode(input: {
   fetchImpl: typeof fetch;
   redirectUri?: string;
@@ -124,8 +116,8 @@ export async function exchangeCode(input: {
   clientSecret: string;
   code: string;
   verifier: string;
-}): Promise<ReturnType<typeof tokenFileFromResponse>> {
-  const body = new URLSearchParams({
+}): Promise<TokenFile> {
+  const { response, payload } = await postTokenEndpoint(input.fetchImpl, {
     code: input.code,
     client_id: input.clientId,
     client_secret: input.clientSecret,
@@ -133,25 +125,14 @@ export async function exchangeCode(input: {
     grant_type: 'authorization_code',
     code_verifier: input.verifier,
   });
-  const response = await input.fetchImpl(OAUTH_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-    body,
-  });
-  const payload = await readOauthJson(response);
   if (!response.ok) {
     const message = oauthFailureMessage(payload, response.status, [input.clientSecret, input.code, input.verifier]);
-    if (message === 'redirect_uri_mismatch') throw new Error(REDIRECT_MISMATCH_MESSAGE);
-    throw new Error(message);
+    throw new Error(message === 'redirect_uri_mismatch' ? REDIRECT_MISMATCH_MESSAGE : message);
   }
-  return tokenFileFromResponse(payload, {
-    now: input.now,
-    requireRefreshToken: true,
-    secrets: [input.clientSecret, input.code, input.verifier],
-  });
+  return tokenFileFromResponse(payload, { now: input.now, requireRefreshToken: true });
 }
 
-function listen(server: ReturnType<typeof createServer>): Promise<void> {
+function listen(server: Server): Promise<void> {
   return new Promise((resolve, reject) => {
     const onError = (error: NodeJS.ErrnoException) => {
       if (error.code === 'EADDRINUSE') {
@@ -168,17 +149,17 @@ function listen(server: ReturnType<typeof createServer>): Promise<void> {
   });
 }
 
-function waitForCallback(server: ReturnType<typeof createServer>, expectedState: string, timeoutMs: number): Promise<CallbackQuery> {
+/** Resolves with the first redirect that carries our state, or rejects on an error redirect, a state mismatch, or timeout. */
+function waitForCallback(server: Server, expectedState: string, timeoutMs: number): Promise<CallbackQuery> {
   return new Promise((resolve, reject) => {
     let settled = false;
-    const timeout = setTimeout(() => finish(new Error('Login timed out waiting for the browser redirect.')), timeoutMs);
-    const finish = (error?: Error, value?: CallbackQuery) => {
+    const timeout = setTimeout(() => finish(() => reject(new Error('Login timed out waiting for the browser redirect.'))), timeoutMs);
+    const finish = (complete: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       server.off('request', onRequest);
-      if (error) reject(error);
-      else resolve(value!);
+      complete();
     };
     const onRequest = (request: IncomingMessage, response: ServerResponse) => {
       const url = new URL(request.url ?? '/', REDIRECT_URI);
@@ -189,40 +170,31 @@ function waitForCallback(server: ReturnType<typeof createServer>, expectedState:
       }
       const error = url.searchParams.get('error');
       if (error) {
-        const description = url.searchParams.get('error_description') ?? '';
-        response.writeHead(400, { 'content-type': 'text/html; charset=utf-8', connection: 'close' });
-        response.end(page('Login did not finish. You can close this window.'), () => {
-          if (error === 'redirect_uri_mismatch' || description.includes('redirect_uri_mismatch')) {
-            finish(new Error(REDIRECT_MISMATCH_MESSAGE));
-            return;
-          }
-          finish(new Error(`Google returned ${error}.`));
-        });
+        const mismatch = error === 'redirect_uri_mismatch' || (url.searchParams.get('error_description') ?? '').includes('redirect_uri_mismatch');
+        const failure = new Error(mismatch ? REDIRECT_MISMATCH_MESSAGE : `Google returned ${error}.`);
+        respond(response, 400, 'Login did not finish. You can close this window.', () => finish(() => reject(failure)));
         return;
       }
       const code = url.searchParams.get('code');
       const state = url.searchParams.get('state');
       if (!code || !state || state !== expectedState) {
-        response.writeHead(400, { 'content-type': 'text/html; charset=utf-8', connection: 'close' });
-        response.end(page('Login state did not match. You can close this window.'), () => {
-          finish(new Error('Login state did not match. Run npm run login again.'));
-        });
+        const failure = new Error('Login state did not match. Run npm run login again.');
+        respond(response, 400, 'Login state did not match. You can close this window.', () => finish(() => reject(failure)));
         return;
       }
-      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', connection: 'close' });
-      response.end(page('Login finished. You can close this window.'), () => {
-        finish(undefined, { code, state });
-      });
+      respond(response, 200, 'Login finished. You can close this window.', () => finish(() => resolve({ code, state })));
     };
     server.on('request', onRequest);
   });
 }
 
-function page(message: string): string {
-  return `<!doctype html><meta charset="utf-8"><title>Fitbit Air MCP</title><p>${message}</p>`;
+/** Sends a one-line HTML page and runs `then` once it is flushed, so the browser sees it before the server closes. */
+function respond(response: ServerResponse, status: number, message: string, then: () => void): void {
+  response.writeHead(status, { 'content-type': 'text/html; charset=utf-8', connection: 'close' });
+  response.end(`<!doctype html><meta charset="utf-8"><title>Fitbit Air MCP</title><p>${message}</p>`, then);
 }
 
-function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
+function closeServer(server: Server): Promise<void> {
   return new Promise((resolve) => {
     if (!server.listening) {
       resolve();
