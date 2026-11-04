@@ -29,19 +29,20 @@ function recoveryApi(series: Record<string, Array<[string, Record<string, unknow
 const days = (start: string, count: number) => Array.from({ length: count }, (_, i) => addCivilDays(start, i));
 
 test('ageAtValue reads known points, interpolates, extends the end slopes, and clamps', () => {
-  const male = [[25, 48.0], [35, 44.6], [45, 40.3], [55, 35.0], [65, 29.4], [75, 24.4]] as const;
-  assert.equal(ageAtValue(male, 44.6), 35);
+  const male = [[25, 48.0], [35, 42.4], [45, 37.8], [55, 32.6], [65, 28.2], [75, 24.4]] as const;
+  assert.equal(ageAtValue(male, 42.4), 35);
   assert.equal(ageAtValue(male, 24.4), 75);
   const near = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} != ${expected}`);
-  near(ageAtValue(male, 42.45), 40); // halfway between 35 and 45
-  near(ageAtValue(male, 49.7), 20); // 1.7 above the first point: 5 years earlier on the first slope
+  near(ageAtValue(male, 40.1), 40); // halfway between 35 and 45
+  near(ageAtValue(male, 50.8), 20); // 2.8 above the first point: 5 years earlier on the first slope
+  near(ageAtValue(male, 44.6), 25 + (3.4 / 5.6) * 10);
   assert.equal(ageAtValue(male, 60), 20);
-  assert.equal(ageAtValue(male, 21.9), 80);
+  near(ageAtValue(male, 22.5), 80); // last slope is 0.38 per year
   assert.equal(ageAtValue(male, 5), 90);
 });
 
 test('fitness_age reports each part with its inputs and keeps the documented VO2 max labels', async () => {
-  const vo2 = days('2026-03-01', 3).map((date, i): [string, Record<string, unknown>] => [date, { ...documented, estimated: i === 0, vo2Max: 44.6 }]);
+  const vo2 = days('2026-03-01', 3).map((date, i): [string, Record<string, unknown>] => [date, { ...documented, estimated: i === 0, vo2Max: 42.4 }]);
   const hrv = days('2026-03-01', 7).map((date): [string, Record<string, unknown>] => [date, { averageHeartRateVariabilityMilliseconds: 46, deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds: 90 }]);
   const api = recoveryApi({ 'daily-vo2-max': vo2, 'daily-heart-rate-variability': hrv });
   const result = await readFitnessAge(api, new Date('2026-03-10T12:00:00Z'), { sex: 'male', birthYear: 1990 });
@@ -50,13 +51,13 @@ test('fitness_age reports each part with its inputs and keeps the documented VO2
   assert.deepEqual(result.missing, []);
   assert.deepEqual(result.parts[0], {
     key: 'vo2max',
-    inputMedian: 44.6,
+    inputMedian: 42.4,
     unit: 'ml/kg/min',
     days: 3,
     estimatedDays: 1,
     latestCardioFitnessLevel: 'GOOD',
     equivalentAge: 35,
-    reference: 'FRIEND registry treadmill 50th percentile (Kaminsky 2015)',
+    reference: 'FRIEND registry treadmill 50th percentile (Kaminsky 2015, Table 3)',
   });
   assert.equal(result.parts[1]!.key, 'hrv');
   assert.equal(result.parts[1]!.inputMedian, 46); // the average RMSSD, not the deep-sleep one

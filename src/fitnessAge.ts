@@ -11,20 +11,19 @@ export type Sex = 'male' | 'female' | 'unspecified';
 type Curve = ReadonlyArray<readonly [number, number]>;
 
 /**
- * Treadmill VO2 max 50th percentile (ml/kg/min) at decade midpoints 25-75, FRIEND registry:
+ * Treadmill VO2 max 50th percentile (ml/kg/min) per age decade, placed at the decade midpoints 25-75, FRIEND registry:
  * Kaminsky LA, Arena R, Myers J. Reference standards for cardiorespiratory fitness measured with
- * cardiopulmonary exercise testing. Mayo Clin Proc. 2015;90(11):1515-1523.
- * Not yet checked against the paper's table: the 35-65 points may differ from the published medians.
+ * cardiopulmonary exercise testing. Mayo Clin Proc. 2015;90(11):1515-1523, Table 3 (PMC4919021).
  */
 const VO2_MAX_MEDIAN: Record<'male' | 'female', Curve> = {
-  male: [[25, 48.0], [35, 44.6], [45, 40.3], [55, 35.0], [65, 29.4], [75, 24.4]],
-  female: [[25, 37.6], [35, 34.1], [45, 30.9], [55, 27.1], [65, 22.6], [75, 18.3]],
+  male: [[25, 48.0], [35, 42.4], [45, 37.8], [55, 32.6], [65, 28.2], [75, 24.4]],
+  female: [[25, 37.6], [35, 30.2], [45, 26.7], [55, 23.4], [65, 20.0], [75, 18.3]],
 };
 
 /**
- * Short-term RMSSD (ms) by age, both sexes. Attributed to Shaffer F, Ginsberg JP. An overview of heart rate
- * variability metrics and norms. Front Public Health. 2017;5:258. A review, not a registry: low confidence.
- * Not yet checked against the review.
+ * RMSSD (ms) by age, both sexes, with no published source: often attributed to Shaffer F, Ginsberg JP.
+ * Front Public Health. 2017;5:258 (PMC5624990), but that review has no age table for RMSSD, only
+ * Nunan et al.'s short-term 42 +/- 15 ms. Low confidence.
  */
 const RMSSD_MEDIAN: Curve = [[25, 60], [35, 46], [45, 36], [55, 29], [65, 23]];
 
@@ -104,7 +103,7 @@ export async function readFitnessAge(api: HealthApi, now: Date, input: FitnessAg
       estimatedDays: vo2Days.filter((day) => day.dailyVo2Max!.estimated === true).length,
       ...(latestLevel ? { latestCardioFitnessLevel: latestLevel } : {}),
       equivalentAge: round1(ageAtValue(vo2Curve(sex), vo2Median)),
-      reference: 'FRIEND registry treadmill 50th percentile (Kaminsky 2015)',
+      reference: 'FRIEND registry treadmill 50th percentile (Kaminsky 2015, Table 3)',
     });
   }
   if (hrvMedian !== undefined) {
@@ -114,7 +113,7 @@ export async function readFitnessAge(api: HealthApi, now: Date, input: FitnessAg
       unit: 'ms RMSSD',
       days: hrv.length,
       equivalentAge: round1(ageAtValue(RMSSD_MEDIAN, hrvMedian)),
-      reference: 'Age RMSSD values attributed to the Shaffer & Ginsberg 2017 review; same table for both sexes',
+      reference: 'Unsourced age RMSSD table, same for both sexes; not found in the Shaffer & Ginsberg 2017 review it is usually attributed to',
       confidence: 'low',
       caveat:
         'The API documents averageHeartRateVariabilityMilliseconds as an average RMSSD recorded during sleep, not explicitly as whole-night RMSSD; the reference values are short-term resting recordings.',
