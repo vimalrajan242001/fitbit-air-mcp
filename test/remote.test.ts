@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { SCOPES } from '../src/constants.js';
+import { REDIRECT_MISMATCH_MESSAGE, SCOPES } from '../src/constants.js';
 import { createHealthApi } from '../src/health.js';
-import { exchangeCode, googleAuthorizeUrl } from '../src/oauth.js';
+import { createPkcePair, exchangeCode, googleAuthorizeUrl } from '../src/oauth.js';
 import { connectionStatus } from '../src/status.js';
 import { clientRegistrationCallback, ownerRefusal } from '../src/worker-auth.js';
 import type { RemoteToken } from '../src/tokens.js';
@@ -106,4 +107,22 @@ test('only the owner Google account may finish the Worker sign-in', async () => 
   assert.equal(await ownerRefusal(tokens, '111', fetchImpl), undefined);
   assert.match((await ownerRefusal(tokens, '222', fetchImpl))!, /not the owner/);
   assert.match((await ownerRefusal(tokens, undefined, fetchImpl))!, /OWNER_HEALTH_USER_ID is not set.*111/);
+});
+
+test('a PKCE pair is fresh each time and its challenge is the S256 of the verifier', () => {
+  const first = createPkcePair();
+  const second = createPkcePair();
+  assert.notEqual(first.verifier, second.verifier);
+  assert.match(first.verifier, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(createHash('sha256').update(first.verifier).digest('base64url'), first.challenge);
+});
+
+test('a failed code exchange explains a redirect mismatch and hides the client secret', async () => {
+  const reply = (body: unknown) => (async () => Response.json(body, { status: 400 })) as typeof fetch;
+  const input = { now: new Date(), clientId: 'cid', clientSecret: 'secret-value', code: 'code-value', verifier: 'verifier-value' };
+  await assert.rejects(exchangeCode({ ...input, fetchImpl: reply({ error: 'redirect_uri_mismatch' }) }), new RegExp(REDIRECT_MISMATCH_MESSAGE.replace(/[.]/g, '\\.')));
+  await assert.rejects(exchangeCode({ ...input, fetchImpl: reply({ error: 'invalid_grant', error_description: 'code-value used with secret-value' }) }), (error: Error) => {
+    assert.equal(error.message, 'Token request failed ([redacted] used with [redacted]).');
+    return true;
+  });
 });

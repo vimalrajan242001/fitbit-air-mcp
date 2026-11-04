@@ -3,14 +3,17 @@ import { test } from 'node:test';
 
 import {
   addCivilDays,
+  chunkRange,
   assertRange,
   civilDateOf,
   civilToday,
   closedOpenRange,
   eachCivilDate,
   inclusiveDayCount,
+  intervalMinutes,
   parseCivilDate,
   parseDurationSeconds,
+  readInterval,
 } from '../src/dates.js';
 
 test('civil dates parse strictly and refuse impossible days', () => {
@@ -61,4 +64,22 @@ test('Google durations parse as seconds', () => {
   assert.equal(parseDurationSeconds('1.5s'), 1.5);
   assert.equal(parseDurationSeconds('40m'), undefined);
   assert.equal(parseDurationSeconds(40), undefined);
+});
+
+test('chunkRange splits an inclusive range into fixed slices with a short last slice', () => {
+  assert.deepEqual(chunkRange('2026-07-01', '2026-07-17', 7), [
+    { start: '2026-07-01', end: '2026-07-07' },
+    { start: '2026-07-08', end: '2026-07-14' },
+    { start: '2026-07-15', end: '2026-07-17' },
+  ]);
+  assert.deepEqual(chunkRange('2026-07-01', '2026-07-01', 14), [{ start: '2026-07-01', end: '2026-07-01' }]);
+});
+
+test('readInterval keeps the documented fields and intervalMinutes refuses a backwards interval', () => {
+  const interval = readInterval({ startTime: '2026-03-04T07:00:00Z', endTime: '2026-03-04T07:45:30Z', startUtcOffset: '3600s', extra: 'dropped' });
+  assert.deepEqual(interval, { startTime: '2026-03-04T07:00:00Z', endTime: '2026-03-04T07:45:30Z', startUtcOffset: '3600s' });
+  assert.equal(intervalMinutes(interval!), 46);
+  assert.equal(readInterval({ startTime: '2026-03-04T07:00:00Z' }), null);
+  assert.equal(intervalMinutes({ startTime: '2026-03-04T08:00:00Z', endTime: '2026-03-04T07:00:00Z' }), null);
+  assert.equal(intervalMinutes({ startTime: 'soon', endTime: '2026-03-04T07:00:00Z' }), null);
 });

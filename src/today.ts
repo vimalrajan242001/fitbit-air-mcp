@@ -1,8 +1,9 @@
 import { readDailyActivity, type ActivityDay } from './activity.js';
 import { civilToday } from './dates.js';
-import { HealthCallError, isRecord, type Missing } from './errors.js';
-import type { HealthApi } from './health.js';
 import { latestSync, readSyncStatus } from './devices.js';
+import { HealthCallError, errorMessage, type Missing } from './errors.js';
+import type { HealthApi } from './health.js';
+import { isRecord } from './parse.js';
 import { readSleepNights, type SleepNight } from './sleep.js';
 
 export type TodaySnapshot = {
@@ -16,6 +17,7 @@ export type TodaySnapshot = {
   missing: Missing[];
 };
 
+/** Today's headline numbers in the account time zone. Each part that cannot be read becomes a missing entry. */
 export async function readToday(api: HealthApi, now: Date): Promise<TodaySnapshot> {
   let settings: unknown;
   try {
@@ -30,10 +32,7 @@ export async function readToday(api: HealthApi, now: Date): Promise<TodaySnapsho
   try {
     date = civilToday(timeZone, now);
   } catch (error) {
-    return {
-      timeZone,
-      missing: [{ series: 'settings', reason: error instanceof Error ? error.message : 'account time zone could not be applied' }],
-    };
+    return { timeZone, missing: [{ series: 'settings', reason: errorMessage(error, 'account time zone could not be applied') }] };
   }
 
   const activity = await readDailyActivity(api, date, date, ['steps', 'active-zone-minutes']);

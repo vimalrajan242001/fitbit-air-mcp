@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { readFinite, readInt } from '../src/dates.js';
-import { isRecord } from '../src/errors.js';
+import { isRecord, pickNumbers, readFinite, readInt } from '../src/parse.js';
 
 test('readInt accepts safe integers and integer strings only', () => {
   assert.equal(readInt(42), 42);
@@ -28,4 +27,10 @@ test('isRecord is true only for plain objects', () => {
   assert.equal(isRecord([]), false);
   assert.equal(isRecord(null), false);
   assert.equal(isRecord('x'), false);
+});
+
+test('pickNumbers copies only the allowlisted, readable fields', () => {
+  const source = { a: '3', b: '2.5', c: 7, secret: 1, d: 'x' };
+  assert.deepEqual(pickNumbers(source, { ints: ['a', 'd'], numbers: ['b', 'c'] }), { a: 3, b: 2.5, c: 7 });
+  assert.deepEqual(pickNumbers({}, { ints: ['a'], numbers: [] }), {});
 });
