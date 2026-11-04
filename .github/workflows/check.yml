@@ -8,9 +8,48 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR supersedes the older run; pushes to main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  check:
+  unit-tests:
+    # Mark both "Unit tests (Node 22)" and "Unit tests (Node 24)" as required checks in branch protection.
+    name: Unit tests (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - name: Run unit tests with coverage
+        # An explicit `shell: bash` adds pipefail, so a failing test still fails this step through tee.
+        shell: bash
+        run: npm test -- --test-reporter=spec --experimental-test-coverage --test-coverage-include='src/**' 2>&1 | tee test-output.txt
+      - name: Test summary
+        if: always()
+        run: |
+          {
+            echo "## Unit tests (Node ${{ matrix.node }})"
+            echo '```'
+            grep -E '^ℹ' test-output.txt || echo 'No test summary was produced. See the step log.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  check:
+    name: Typecheck, build, and secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -21,7 +60,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run check
+      # Unit tests run in their own job above.
+      - run: npm run typecheck
+      - run: npm run build
       - name: bundle worker
         run: npx wrangler deploy --dry-run --outdir dist-worker
       - run: node scripts/secret-scan.mjs
@@ -31,7 +72,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy:
-    needs: check
+    needs: [unit-tests, check]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
