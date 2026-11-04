@@ -17,8 +17,8 @@ export type TodaySnapshot = {
   missing: Missing[];
 };
 
-/** Today's headline numbers in the account time zone. Each part that cannot be read becomes a missing entry. */
-export async function readToday(api: HealthApi, now: Date): Promise<TodaySnapshot> {
+/** Today's civil date in the account time zone. Without `date`, `missing` says why. */
+export async function readAccountDate(api: HealthApi, now: Date): Promise<{ timeZone?: string; date?: string; missing: Missing[] }> {
   let settings: unknown;
   try {
     settings = await api.get('/users/me/settings');
@@ -34,6 +34,14 @@ export async function readToday(api: HealthApi, now: Date): Promise<TodaySnapsho
   } catch (error) {
     return { timeZone, missing: [{ series: 'settings', reason: errorMessage(error, 'account time zone could not be applied') }] };
   }
+  return { timeZone, date, missing: [] };
+}
+
+/** Today's headline numbers in the account time zone. Each part that cannot be read becomes a missing entry. */
+export async function readToday(api: HealthApi, now: Date): Promise<TodaySnapshot> {
+  const account = await readAccountDate(api, now);
+  if (!account.date) return account;
+  const { timeZone, date } = account;
 
   const activity = await readDailyActivity(api, date, date, ['steps', 'active-zone-minutes']);
   if (activity.authStopped) return { timeZone, date, missing: activity.missing };

@@ -7,6 +7,7 @@ import type { DateRange } from './dates.js';
 import { readSyncStatus } from './devices.js';
 import { errorMessage } from './errors.js';
 import { readExerciseSessions } from './exercise.js';
+import { readFitnessAge } from './fitnessAge.js';
 import { createHealthApi } from './health.js';
 import { defaultConfigDir } from './paths.js';
 import { readRecoveryDays } from './recovery.js';
@@ -108,13 +109,29 @@ export function createFitbitServer(partial: ServerDeps = {}): McpServer {
     'recovery_day',
     {
       description:
-        'Daily wearable recovery values for an inclusive civil range, at most 31 days: resting heart rate (beatsPerMinute), heart rate variability (average RMSSD and deep-sleep RMSSD in milliseconds, non-REM heart rate, entropy), and overnight oxygen saturation (average, confidence bounds, and standard deviation in percent). A day with no samples is missing, not zero. Values stay in the API units. Descriptive only: not a score and not a diagnosis.',
+        'Daily wearable recovery values for an inclusive civil range, at most 31 days: resting heart rate (beatsPerMinute), heart rate variability (average RMSSD and deep-sleep RMSSD in milliseconds, non-REM heart rate, entropy), overnight oxygen saturation (average, confidence bounds, and standard deviation in percent), and daily VO2 max (vo2Max in ml/kg/min, estimated, and cardioFitnessLevel as the API labels it). A day with no samples is missing, not zero. Values stay in the API units. Descriptive only: not a score and not a diagnosis.',
       inputSchema: z.object(dateRangeFields),
     },
     run(deps, (args) => {
       const { start, end } = rangeOf(args);
       return readRecoveryDays(api, start, end);
     }),
+  );
+
+  server.registerTool(
+    'fitness_age',
+    {
+      description:
+        'Equivalent age: the age at which a typical person of the same sex has your median daily VO2 max (FRIEND registry treadmill 50th percentile, Kaminsky 2015), with its inputs and source. Needs at least 3 days with VO2 max; with fewer it is missing, never guessed. The window is at most 31 days and defaults to the 30 days ending today in the account time zone. Descriptive, not a score and not a diagnosis.',
+      inputSchema: z.object({
+        start: dateField.optional().describe('Inclusive civil start date, YYYY-MM-DD. Defaults to 29 days before end.'),
+        end: dateField.optional().describe('Inclusive civil end date, YYYY-MM-DD. Defaults to today in the account time zone.'),
+        age: z.number().int().min(1).max(120).optional().describe('Age in years, shown next to the equivalent ages.'),
+        birthYear: z.number().int().min(1900).max(2100).optional().describe('Used for the shown age when age is not given.'),
+        sex: z.enum(['male', 'female', 'unspecified']).optional().describe('Reference curve. "unspecified" (default) averages the male and female curves.'),
+      }),
+    },
+    run(deps, (args) => readFitnessAge(api, deps.now(), args)),
   );
 
   server.registerTool(

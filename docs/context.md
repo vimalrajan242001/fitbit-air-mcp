@@ -38,7 +38,7 @@ The env file and `tokens.json` live in `~/.config/fitbit-air-mcp/` (on Windows, 
 
 ## This slice
 
-Tools: `connection_status`, `sync_status`, `daily_activity`, `sleep_nights`, `recovery_day`, `exercise_sessions`. Resource: `fitbit://today`. Prompts: `weekly_review`, `sleep_check`, each with the today snapshot embedded. `compare_periods` was removed; `granularity: "week"` covers trends and comparisons.
+Tools: `connection_status`, `sync_status`, `daily_activity`, `sleep_nights`, `recovery_day`, `fitness_age`, `exercise_sessions`. Resource: `fitbit://today`. Prompts: `weekly_review`, `sleep_check`, each with the today snapshot embedded. `compare_periods` was removed; `granularity: "week"` covers trends and comparisons.
 
 `granularity: "week"` (in `src/trends.ts`) accepts up to 91 days. Activity is read in 14-day chunks (35 calls for 91 days, under the Workers free-plan 50-subrequest cap) and returned as 7-day weeks from `start` with per-day averages and `daysWithData`, no per-day rows. Sleep takes the longest session per civil end date as the main sleep and counts the rest as naps; each week has average asleep and in-bed minutes, the median local bedtime, and its 25th-75th percentile spread. Both add a baseline: median and 25th-75th percentile over the last 28 days of the range. It is descriptive, not a score.
 
@@ -56,7 +56,9 @@ A missing rollup for a civil day is an empty series plus a `missing` entry. A do
 
 Sleep uses `GET /users/me/dataTypes/sleep/dataPoints:reconcile` with the wearable family, page size 25, at most 31 days per request, and `filter=sleep.interval.civil_end_time >= "{start}"` plus the documented upper bound `< "{day after end}"`. In-bed minutes are the session interval. Asleep minutes are `summary.minutesAsleep`. Light, deep, REM, and awake minutes are `summary.stagesSummary`. Short-awakening count is the length of `shortAwakenings`. `detail=true` returns stage intervals only for a single night. `sleepEfficiencyPercent` is `round((minutesAsleep / inBedMinutes) * 100)` from the sleep guide. It is not the in-app Sleep Score.
 
-`recovery_day` reconciles `daily-resting-heart-rate`, `daily-heart-rate-variability`, and `daily-oxygen-saturation` with the wearable family, at most 31 days, filtered on `{type_with_underscores}.date >= "{start}"` and `< "{day after end}"`. It keeps `beatsPerMinute`; `averageHeartRateVariabilityMilliseconds`, `deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds`, `nonRemHeartRateBeatsPerMinute`, `entropy`; and `averagePercentage`, `lowerBoundPercentage`, `upperBoundPercentage`, `standardDeviationPercentage`.
+`recovery_day` reconciles `daily-resting-heart-rate`, `daily-heart-rate-variability`, `daily-oxygen-saturation`, and `daily-vo2-max` (scope `activity_and_fitness.readonly`) with the wearable family, at most 31 days, filtered on `{type_with_underscores}.date >= "{start}"` and `< "{day after end}"`. It keeps `beatsPerMinute`; `averageHeartRateVariabilityMilliseconds`, `deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds`, `nonRemHeartRateBeatsPerMinute`, `entropy`; and `averagePercentage`, `lowerBoundPercentage`, `upperBoundPercentage`, `standardDeviationPercentage`; and `vo2Max` (ml/kg/min), `estimated` when it is a boolean, and `cardioFitnessLevel` when it is one of `POOR`..`EXCELLENT`. `vo2MaxCovariance` is documented only as "the covariance", so it is not used.
+
+`fitness_age` reuses `readRecoveryDays` once, over at most 31 days (default: the 30 days ending today in the account time zone). Age and sex are tool inputs: the Profile documents `age` but no sex. It inverts the FRIEND treadmill 50th-percentile curve (Kaminsky 2015, Table 3) from the median VO2 max of at least 3 days: straight lines between the decade midpoints, end slopes extended, clamped to 20-90. Too few days is a `missing` entry. There is no HRV age: the age RMSSD table usually attributed to Shaffer & Ginsberg 2017 is not in that review. No combined number and no estimate from heart rate.
 
 `exercise_sessions` reconciles `exercise` with the wearable family, at most 31 days, filtered on `exercise.interval.civil_start_time`. It keeps `exerciseType`, `displayName`, the interval, `activeDuration` as minutes, and the `metricsSummary` fields `steps`, `caloriesKcal`, `distanceMillimeters`, `elevationGainMillimeters`, `averageHeartRateBeatsPerMinute`, `activeZoneMinutes`, `averageSpeedMillimetersPerSecond`, `averagePaceSecondsPerMeter`. No `notes`, `exerciseMetadata`, splits, or events.
 
@@ -68,7 +70,7 @@ A missing scope or HTTP 403 becomes a `missing` entry. The rest of the tool stil
 
 ## Next slice
 
-A bounded heart-rate series. Skin temperature and VO2 max wait. GPS and irregular-rhythm notifications stay off until asked for. Still no write, delete, or generic URL tool.
+A bounded heart-rate series. Skin temperature waits. GPS and irregular-rhythm notifications stay off until asked for. Still no write, delete, or generic URL tool.
 
 ## Ports
 
