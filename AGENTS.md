@@ -38,6 +38,7 @@ Take the first option that fully works:
 - `src/oauth.ts` is the PKCE loopback login.
 - `src/health.ts` is the Health API client.
 - `src/activity.ts`, `src/sleep.ts`, `src/recovery.ts`, `src/exercise.ts`, `src/devices.ts`, and `src/today.ts` are the reads.
+- Shared helpers: `src/parse.ts` reads untrusted JSON values, `src/dates.ts` civil dates and intervals, `src/stats.ts` trend math, `src/errors.ts` `HealthCallError` and `expectHealthError`.
 - `docs/context.md` is the longer brief. Read it before changing a call shape.
 - `.agents/skills/add-health-tool/SKILL.md` is for adding a tool.
 

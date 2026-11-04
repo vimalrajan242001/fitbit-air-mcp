@@ -185,8 +185,14 @@ npm run check
 ```
 `npm run check` runs:
 1. TypeScript typecheck (`tsc --noEmit`).
-2. Node.js unit and integration tests (20 tests covering activity, sleep, devices, auth, harness, and secrets).
+2. Node.js unit and integration tests (`test/*.test.ts`: every read, auth, the MCP tool contract, harness, and secrets).
 3. Production build (`tsc -p tsconfig.build.json`).
+
+Run one file with `npm test -- test/sleep.test.ts`. Node test flags pass through, e.g. `npm test -- --experimental-test-coverage`.
+
+Every pull request runs `.github/workflows/check.yml`: the **Unit tests (Node 22)** and **Unit tests (Node 24)** jobs (with a coverage table in the run summary), and a typecheck, build, Worker bundle, and secret-scan job. Deploy to Cloudflare waits for all of them. Mark the unit-test jobs as required checks in branch protection so a red test blocks merge.
+
+If `test/fixtures/mcp-contract.json` fails, a tool's name, description, or input schema changed. That is what MCP clients see. Regenerate it only when the change is intended.
 
 ---
 
