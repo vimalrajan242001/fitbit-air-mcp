@@ -1,5 +1,7 @@
-import { HealthCallError, isRecord, type Missing } from './errors.js';
+import { MAX_PAIRED_DEVICE_PAGES, PAIRED_DEVICE_PAGE_SIZE } from './constants.js';
+import { expectHealthError, type Missing } from './errors.js';
 import { paginate, type HealthApi } from './health.js';
+import { isRecord, readString } from './parse.js';
 
 export type SyncDevice = {
   deviceVersion: string | null;
@@ -22,40 +24,36 @@ export async function readSyncStatus(api: HealthApi): Promise<SyncResult> {
       missing: devices.length === 0 ? [{ series: 'paired-devices', reason: 'no paired devices' }] : [],
     };
   } catch (error) {
-    if (error instanceof HealthCallError) {
-      return { devices: [], missing: [{ series: 'paired-devices', reason: error.message }] };
-    }
-    throw error;
+    return { devices: [], missing: [{ series: 'paired-devices', reason: expectHealthError(error).message }] };
   }
 }
 
 export function listPairedDevices(api: HealthApi): Promise<unknown[]> {
   return paginate(
     (pageToken) => {
-      const params = new URLSearchParams({ pageSize: '100' });
+      const params = new URLSearchParams({ pageSize: String(PAIRED_DEVICE_PAGE_SIZE) });
       if (pageToken) params.set('pageToken', pageToken);
       return api.get(`/users/me/pairedDevices?${params.toString()}`);
     },
     'pairedDevices',
-    10,
+    MAX_PAIRED_DEVICE_PAGES,
     'paging stopped before paired devices were covered',
   );
 }
 
-/** Copies the documented sync fields and drops macAddress. */
+/** Copies the documented sync fields from an allowlist, so macAddress never reaches a result. */
 export function toSyncDevice(device: unknown): SyncDevice {
-  if (!isRecord(device)) {
-    return { deviceVersion: null, batteryLevel: null, batteryStatus: null, lastSyncTime: null, features: [] };
-  }
+  const fields = isRecord(device) ? device : {};
   return {
-    deviceVersion: typeof device.deviceVersion === 'string' ? device.deviceVersion : null,
-    batteryLevel: typeof device.batteryLevel === 'number' ? device.batteryLevel : null,
-    batteryStatus: typeof device.batteryStatus === 'string' ? device.batteryStatus : null,
-    lastSyncTime: typeof device.lastSyncTime === 'string' ? device.lastSyncTime : null,
-    features: Array.isArray(device.features) ? device.features.filter((feature): feature is string => typeof feature === 'string') : [],
+    deviceVersion: readString(fields.deviceVersion) ?? null,
+    batteryLevel: typeof fields.batteryLevel === 'number' ? fields.batteryLevel : null,
+    batteryStatus: readString(fields.batteryStatus) ?? null,
+    lastSyncTime: readString(fields.lastSyncTime) ?? null,
+    features: Array.isArray(fields.features) ? fields.features.filter((feature): feature is string => typeof feature === 'string') : [],
   };
 }
 
+/** The device that synced most recently, ignoring unreadable sync times. */
 export function latestSync(devices: SyncDevice[]): SyncDevice | undefined {
   return devices
     .filter((device) => device.lastSyncTime && !Number.isNaN(Date.parse(device.lastSyncTime)))

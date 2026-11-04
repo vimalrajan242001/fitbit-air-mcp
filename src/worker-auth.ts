@@ -1,7 +1,8 @@
 import type { ClientRegistrationCallbackOptions } from '@cloudflare/workers-oauth-provider';
 
-import { HealthCallError, isRecord } from './errors.js';
+import { HealthCallError } from './errors.js';
 import { createHealthApi } from './health.js';
+import { isRecord } from './parse.js';
 import type { TokenFile } from './tokens.js';
 
 /** Clients that may register: HTTPS callbacks on these hosts, or loopback apps such as Claude Code. */

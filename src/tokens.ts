@@ -2,7 +2,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 
 import { ACCESS_TOKEN_SKEW_MS, LOGIN_WARNING_MS, OAUTH_TOKEN_URL, TESTING_REFRESH_MS } from './constants.js';
 import { loadOAuthClient, type OAuthClient } from './env.js';
-import { HealthCallError, findReason, isRecord, sanitizeText } from './errors.js';
+import { HealthCallError, findReason, sanitizeText } from './errors.js';
+import { isRecord, readJsonBody } from './parse.js';
 import { tokenPath } from './paths.js';
 
 export type TokenFile = {
@@ -15,6 +16,7 @@ export type TokenFile = {
 
 const chains = new Map<string, Promise<unknown>>();
 
+/** Runs tasks with the same key one at a time, so two reads never refresh the same token file at once. */
 export function enqueue<T>(key: string, task: () => Promise<T>): Promise<T> {
   const previous = chains.get(key) ?? Promise.resolve();
   const run = previous.then(task, task);
@@ -108,6 +110,7 @@ export type TokenDeps = {
   remote?: RemoteToken;
 };
 
+/** A usable access token from the token file, refreshing and saving it when it is near expiry or `force` is set. */
 export async function getAccessToken(deps: TokenDeps): Promise<string> {
   return enqueue(deps.configDir, async () => {
     const current = readTokenFile(deps.configDir);
@@ -123,18 +126,12 @@ export async function getAccessToken(deps: TokenDeps): Promise<string> {
 }
 
 export async function refreshAccessToken(current: TokenFile, client: OAuthClient, fetchImpl: typeof fetch, now: Date): Promise<TokenFile> {
-  const body = new URLSearchParams({
+  const { response, payload } = await postTokenEndpoint(fetchImpl, {
     client_id: client.clientId,
     client_secret: client.clientSecret,
     refresh_token: current.refreshToken,
     grant_type: 'refresh_token',
   });
-  const response = await fetchImpl(OAUTH_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-    body,
-  });
-  const payload = await readOauthJson(response);
   if (!response.ok) {
     const reason = findReason(payload);
     if (reason === 'invalid_grant') throw new HealthCallError('login_due', 'login due');
@@ -144,13 +141,13 @@ export async function refreshAccessToken(current: TokenFile, client: OAuthClient
     now,
     previous: current,
     requireRefreshToken: false,
-    secrets: [client.clientSecret, current.refreshToken],
   });
 }
 
+/** Validates a token response. A new refresh token restarts the 7-day clock; otherwise the previous one is kept. */
 export function tokenFileFromResponse(
   payload: unknown,
-  options: { now: Date; previous?: TokenFile; requireRefreshToken: boolean; secrets: string[] },
+  options: { now: Date; previous?: TokenFile; requireRefreshToken: boolean },
 ): TokenFile {
   if (!isRecord(payload) || typeof payload.access_token !== 'string' || payload.access_token.length === 0) {
     throw new Error('Token response did not include an access token.');
@@ -166,10 +163,7 @@ export function tokenFileFromResponse(
     }
     refreshToken = payload.refresh_token;
   }
-  if (!refreshToken || !refreshObtainedAt) {
-    throw new Error('Google did not return a refresh token. Run npm run login again and accept the consent screen.');
-  }
-  if (options.requireRefreshToken && typeof payload.refresh_token !== 'string') {
+  if (!refreshToken || !refreshObtainedAt || (options.requireRefreshToken && typeof payload.refresh_token !== 'string')) {
     throw new Error('Google did not return a refresh token. Run npm run login again and accept the consent screen.');
   }
   const scopes =
@@ -185,16 +179,18 @@ export function tokenFileFromResponse(
   };
 }
 
-export async function readOauthJson(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text) return {};
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new Error(`The token endpoint returned a non-JSON response (HTTP ${response.status}).`);
-  }
+/** POSTs a form to Google's token endpoint and returns the response with its parsed JSON body. */
+export async function postTokenEndpoint(fetchImpl: typeof fetch, form: Record<string, string>): Promise<{ response: Response; payload: unknown }> {
+  const response = await fetchImpl(OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body: new URLSearchParams(form),
+  });
+  const payload = await readJsonBody(response, () => new Error(`The token endpoint returned a non-JSON response (HTTP ${response.status}).`));
+  return { response, payload };
 }
 
+/** A sanitized failure message, or the bare `redirect_uri_mismatch` marker the caller maps to setup help. */
 export function oauthFailureMessage(payload: unknown, status: number, secrets: string[]): string {
   const reason = findReason(payload);
   const description =

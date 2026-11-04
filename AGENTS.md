@@ -37,7 +37,8 @@ Take the first option that fully works:
 - `src/server.ts` is `createFitbitServer()`.
 - `src/oauth.ts` is the PKCE loopback login.
 - `src/health.ts` is the Health API client.
-- `src/activity.ts`, `src/sleep.ts`, `src/devices.ts`, and `src/today.ts` are the reads.
+- `src/activity.ts`, `src/sleep.ts`, `src/recovery.ts`, `src/exercise.ts`, `src/devices.ts`, and `src/today.ts` are the reads.
+- Shared helpers: `src/parse.ts` reads untrusted JSON values, `src/dates.ts` civil dates and intervals, `src/stats.ts` trend math, `src/errors.ts` `HealthCallError` and `expectHealthError`.
 - `docs/context.md` is the longer brief. Read it before changing a call shape.
 - `.agents/skills/add-health-tool/SKILL.md` is for adding a tool.
 
@@ -72,5 +73,5 @@ Env file: `~/.config/fitbit-air-mcp/env` (`%USERPROFILE%\.config\fitbit-air-mcp\
 
 - Commit or print the client secret, a refresh token, an access token, or `tokens.json`.
 - Call `api.fitbit.com`.
-- Add write, delete, GPS, irregular-rhythm, nutrition, ECG, heart-rate series, HRV, or SpO2 in this slice.
+- Add write, delete, GPS, irregular-rhythm, nutrition, ECG, or heart-rate series in this slice.
 - Present a Sleep Score or a medical diagnosis.

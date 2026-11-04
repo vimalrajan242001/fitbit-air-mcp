@@ -1,23 +1,18 @@
-import { MAX_SLEEP_DAYS, MAX_SLEEP_PAGES, SLEEP_PAGE_SIZE, WEARABLE_FAMILY } from './constants.js';
-import { addCivilDays, assertRange, eachCivilDate, formatCivilDate, parseDurationSeconds, readInt } from './dates.js';
-import { HealthCallError, isRecord, type Missing } from './errors.js';
-import { paginate, type HealthApi } from './health.js';
+import { MAX_RECONCILE_DAYS, WEARABLE_FAMILY } from './constants.js';
+import { assertRange, civilDateOf, eachCivilDate, intervalMinutes, readInterval, type Interval } from './dates.js';
+import { expectHealthError, type Missing } from './errors.js';
+import { civilRangeFilter, reconcile, type HealthApi, type WearableResult } from './health.js';
+import { isRecord, readInt } from './parse.js';
 
 const STAGE_TYPES = ['AWAKE', 'LIGHT', 'DEEP', 'REM', 'ASLEEP', 'RESTLESS'] as const;
 type StageType = (typeof STAGE_TYPES)[number];
 
-export type SleepStageInterval = {
-  type: string;
-  startTime: string;
-  endTime: string;
-  startUtcOffset?: string;
-  endUtcOffset?: string;
-};
+export type SleepStageInterval = Interval & { type: string };
 
 export type SleepNight = {
   date: string;
   sourceDevice?: string;
-  interval: { startTime: string; endTime: string; startUtcOffset?: string; endUtcOffset?: string };
+  interval: Interval;
   inBedMinutes: number;
   /** Minutes / 60, rounded to 0.01. */
   inBedHours: number;
@@ -30,89 +25,64 @@ export type SleepNight = {
   stages?: SleepStageInterval[];
 };
 
-export type SleepResult = {
-  range: { start: string; end: string };
-  dataSourceFamily: typeof WEARABLE_FAMILY;
-  nights: SleepNight[];
-  missing: Missing[];
-};
+export type SleepResult = WearableResult & { nights: SleepNight[] };
 
-export async function readSleepNights(api: HealthApi, start: string, end: string, detail: boolean): Promise<SleepResult> {
-  assertRange(start, end, MAX_SLEEP_DAYS);
-  const missing: Missing[] = [];
+export async function readSleepNights(api: HealthApi, start: string, end: string, detail: boolean, maxDays = MAX_RECONCILE_DAYS): Promise<SleepResult> {
+  assertRange(start, end, maxDays);
+  const range = { start, end };
+  const result: SleepResult = { range, dataSourceFamily: WEARABLE_FAMILY, nights: [], missing: [] };
   const singleNight = start === end;
   if (detail && !singleNight) {
-    missing.push({ reason: 'stage intervals are returned only for a single night' });
+    result.missing.push({ reason: 'stage intervals are returned only for a single night' });
   }
   let sessions: unknown[];
   try {
-    sessions = await reconcileSleep(api, start, end);
+    sessions = await reconcile(api, 'sleep', civilRangeFilter('sleep.interval.civil_end_time', range), 'paging stopped before the sleep window was covered');
   } catch (error) {
-    if (error instanceof HealthCallError) {
-      return {
-        range: { start, end },
-        dataSourceFamily: WEARABLE_FAMILY,
-        nights: [],
-        missing: [...missing, { series: 'sleep', reason: error.message }],
-      };
-    }
-    throw error;
+    result.missing.push({ series: 'sleep', reason: expectHealthError(error).message });
+    return result;
   }
 
-  const nights: SleepNight[] = [];
   for (const session of sessions) {
     const night = summarizeSleepSession(session, { includeStages: detail && singleNight });
     if (!night) {
-      missing.push({ series: 'sleep', reason: 'sleep session interval could not be read' });
-      continue;
+      result.missing.push({ series: 'sleep', reason: 'sleep session interval could not be read' });
+    } else if (night.date >= start && night.date <= end) {
+      result.nights.push(night);
     }
-    if (night.date < start || night.date > end) continue;
-    nights.push(night);
   }
-  nights.sort((left, right) => left.interval.endTime.localeCompare(right.interval.endTime));
-
-  const covered = new Set(nights.map((night) => night.date));
-  for (const date of eachCivilDate(start, end)) {
-    if (!covered.has(date)) missing.push({ date, series: 'sleep', reason: 'no wearable samples' });
-  }
-  return { range: { start, end }, dataSourceFamily: WEARABLE_FAMILY, nights, missing };
+  result.nights.sort((left, right) => left.interval.endTime.localeCompare(right.interval.endTime));
+  result.missing.push(...nightsWithoutSleep(result.nights, range.start, range.end));
+  return result;
 }
 
+function nightsWithoutSleep(nights: SleepNight[], start: string, end: string): Missing[] {
+  const covered = new Set(nights.map((night) => night.date));
+  return eachCivilDate(start, end)
+    .filter((date) => !covered.has(date))
+    .map((date) => ({ date, series: 'sleep', reason: 'no wearable samples' }));
+}
+
+/** Builds a night from the documented fields only, or null when the session interval cannot be read. */
 export function summarizeSleepSession(session: unknown, options: { includeStages: boolean }): SleepNight | null {
-  if (!isRecord(session) || !isRecord(session.sleep) || !isRecord(session.sleep.interval)) return null;
-  const interval = session.sleep.interval;
-  if (typeof interval.startTime !== 'string' || typeof interval.endTime !== 'string') return null;
-  const startMs = Date.parse(interval.startTime);
-  const endMs = Date.parse(interval.endTime);
-  if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) return null;
-  const date = civilEndDate(interval);
+  if (!isRecord(session) || !isRecord(session.sleep)) return null;
+  const sleep = session.sleep;
+  if (!isRecord(sleep.interval)) return null;
+  const interval = readInterval(sleep.interval);
+  const inBedMinutes = interval && intervalMinutes(interval);
+  if (!interval || inBedMinutes === null) return null;
+  const date = civilDateOf(sleep.interval.civilEndTime, interval.endTime, interval.endUtcOffset);
   if (!date) return null;
-  const inBedMinutes = Math.round((endMs - startMs) / 60_000);
-  const summary = isRecord(session.sleep.summary) ? session.sleep.summary : undefined;
+
+  const summary = isRecord(sleep.summary) ? sleep.summary : undefined;
   const minutesAsleep = summary ? readInt(summary.minutesAsleep) : undefined;
-  const stageMinutes: SleepNight['stageMinutes'] = {};
-  if (summary && Array.isArray(summary.stagesSummary)) {
-    for (const stage of summary.stagesSummary) {
-      if (!isRecord(stage) || typeof stage.type !== 'string') continue;
-      if (!STAGE_TYPES.includes(stage.type as StageType)) continue;
-      const minutes = readInt(stage.minutes);
-      if (minutes === undefined) continue;
-      stageMinutes[stage.type as StageType] = minutes;
-    }
-  }
-  const shortAwakenings = session.sleep.shortAwakenings;
   const night: SleepNight = {
     date,
-    interval: {
-      startTime: interval.startTime,
-      endTime: interval.endTime,
-      ...(typeof interval.startUtcOffset === 'string' ? { startUtcOffset: interval.startUtcOffset } : {}),
-      ...(typeof interval.endUtcOffset === 'string' ? { endUtcOffset: interval.endUtcOffset } : {}),
-    },
+    interval,
     inBedMinutes,
     inBedHours: hours(inBedMinutes),
-    stageMinutes,
-    shortAwakeningCount: Array.isArray(shortAwakenings) ? shortAwakenings.length : 0,
+    stageMinutes: stageMinutes(summary?.stagesSummary),
+    shortAwakeningCount: Array.isArray(sleep.shortAwakenings) ? sleep.shortAwakenings.length : 0,
   };
   if (minutesAsleep !== undefined) {
     night.minutesAsleep = minutesAsleep;
@@ -123,22 +93,7 @@ export function summarizeSleepSession(session: unknown, options: { includeStages
   }
   const device = isRecord(session.dataSource) && isRecord(session.dataSource.device) ? session.dataSource.device.displayName : undefined;
   if (typeof device === 'string' && device.length > 0) night.sourceDevice = device;
-  if (options.includeStages && Array.isArray(session.sleep.stages)) {
-    night.stages = session.sleep.stages.flatMap((stage) => {
-      if (!isRecord(stage) || typeof stage.type !== 'string' || typeof stage.startTime !== 'string' || typeof stage.endTime !== 'string') {
-        return [];
-      }
-      return [
-        {
-          type: stage.type,
-          startTime: stage.startTime,
-          endTime: stage.endTime,
-          ...(typeof stage.startUtcOffset === 'string' ? { startUtcOffset: stage.startUtcOffset } : {}),
-          ...(typeof stage.endUtcOffset === 'string' ? { endUtcOffset: stage.endUtcOffset } : {}),
-        },
-      ];
-    });
-  }
+  if (options.includeStages && Array.isArray(sleep.stages)) night.stages = stageIntervals(sleep.stages);
   return night;
 }
 
@@ -146,36 +101,21 @@ function hours(minutes: number): number {
   return Math.round(minutes / 0.6) / 100;
 }
 
-function civilEndDate(interval: Record<string, unknown>): string | null {
-  const civil = interval.civilEndTime;
-  if (isRecord(civil) && isRecord(civil.date)) {
-    const { year, month, day } = civil.date;
-    if (typeof year === 'number' && typeof month === 'number' && typeof day === 'number') {
-      return formatCivilDate({ year, month, day });
-    }
+function stageMinutes(stagesSummary: unknown): SleepNight['stageMinutes'] {
+  const minutesByStage: SleepNight['stageMinutes'] = {};
+  if (!Array.isArray(stagesSummary)) return minutesByStage;
+  for (const stage of stagesSummary) {
+    if (!isRecord(stage) || !STAGE_TYPES.includes(stage.type as StageType)) continue;
+    const minutes = readInt(stage.minutes);
+    if (minutes !== undefined) minutesByStage[stage.type as StageType] = minutes;
   }
-  if (typeof interval.endTime !== 'string') return null;
-  const offset = parseDurationSeconds(interval.endUtcOffset) ?? 0;
-  const shifted = new Date(Date.parse(interval.endTime) + offset * 1000);
-  if (Number.isNaN(shifted.getTime())) return null;
-  return shifted.toISOString().slice(0, 10);
+  return minutesByStage;
 }
 
-function reconcileSleep(api: HealthApi, start: string, end: string): Promise<unknown[]> {
-  const exclusiveEnd = addCivilDays(end, 1);
-  const filter = `sleep.interval.civil_end_time >= "${start}" AND sleep.interval.civil_end_time < "${exclusiveEnd}"`;
-  return paginate(
-    (pageToken) => {
-      const params = new URLSearchParams({
-        dataSourceFamily: WEARABLE_FAMILY,
-        pageSize: String(SLEEP_PAGE_SIZE),
-        filter,
-      });
-      if (pageToken) params.set('pageToken', pageToken);
-      return api.get(`/users/me/dataTypes/sleep/dataPoints:reconcile?${params.toString()}`);
-    },
-    'dataPoints',
-    MAX_SLEEP_PAGES,
-    'paging stopped before the sleep window was covered',
-  );
+function stageIntervals(stages: unknown[]): SleepStageInterval[] {
+  return stages.flatMap((stage) => {
+    if (!isRecord(stage) || typeof stage.type !== 'string') return [];
+    const interval = readInterval(stage);
+    return interval ? [{ type: stage.type, ...interval }] : [];
+  });
 }

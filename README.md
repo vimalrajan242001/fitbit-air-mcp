@@ -17,9 +17,10 @@ The band syncs to the Google Health mobile app. This MCP server communicates wit
 | --- | --- |
 | `connection_status` | Whether Health is linked, granted scopes, access-token expiry, and the 7-day login deadline |
 | `sync_status` | Tracker product name, battery, last sync time, and feature flags |
-| `daily_activity` | Steps, distance, active zone minutes, active minutes, and total calories for up to 7 civil days |
-| `sleep_nights` | In-bed and asleep minutes, stage minutes, and short awakenings |
-| `compare_periods` | Two daily-activity ranges, their totals, and the deltas |
+| `daily_activity` | Steps, distance, active zone minutes, active minutes, and total calories for up to 7 civil days, or weekly averages for up to 91 days with a 28-day baseline (`granularity: "week"`) |
+| `sleep_nights` | In-bed and asleep minutes, stage minutes, and short awakenings, or weekly main-sleep averages, median bedtime, and naps for up to 91 days (`granularity: "week"`) |
+| `recovery_day` | Resting heart rate, daily HRV, and overnight SpO2 for up to 31 civil days |
+| `exercise_sessions` | Workouts with type, duration, and summary metrics for up to 31 days, no GPS |
 
 | Resource | What it returns |
 | --- | --- |
@@ -189,8 +190,14 @@ npm run check
 ```
 `npm run check` runs:
 1. TypeScript typecheck (`tsc --noEmit`).
-2. Node.js unit and integration tests (20 tests covering activity, sleep, devices, auth, harness, and secrets).
+2. Node.js unit and integration tests (`test/*.test.ts`: every read, auth, the MCP tool contract, harness, and secrets).
 3. Production build (`tsc -p tsconfig.build.json`).
+
+Run one file with `npm test -- test/sleep.test.ts`. Node test flags pass through, e.g. `npm test -- --experimental-test-coverage`.
+
+Every pull request runs `.github/workflows/check.yml`: the **Unit tests (Node 22)** and **Unit tests (Node 24)** jobs (with a coverage table in the run summary), and a typecheck, build, Worker bundle, and secret-scan job. Deploy to Cloudflare waits for all of them. Mark the unit-test jobs as required checks in branch protection so a red test blocks merge.
+
+If `test/fixtures/mcp-contract.json` fails, a tool's name, description, or input schema changed. That is what MCP clients see. Regenerate it only when the change is intended.
 
 ---
 

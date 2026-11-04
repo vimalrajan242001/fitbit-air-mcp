@@ -1,4 +1,12 @@
+import { isRecord } from './parse.js';
+
 export type CivilParts = { year: number; month: number; day: number };
+
+/** Inclusive civil date range, both ends YYYY-MM-DD. */
+export type DateRange = { start: string; end: string };
+
+/** A documented TimeInterval: UTC instants plus the optional local offsets. */
+export type Interval = { startTime: string; endTime: string; startUtcOffset?: string; endUtcOffset?: string };
 
 export type CivilDateTime = {
   date: CivilParts;
@@ -48,11 +56,21 @@ export function eachCivilDate(start: string, end: string): string[] {
   if (count < 1) {
     throw new Error('The end date is before the start date.');
   }
-  const dates: string[] = [];
-  for (let index = 0; index < count; index += 1) {
-    dates.push(addCivilDays(start, index));
+  return Array.from({ length: count }, (_, index) => addCivilDays(start, index));
+}
+
+/** The earlier of two YYYY-MM-DD dates. */
+function minDate(left: string, right: string): string {
+  return left < right ? left : right;
+}
+
+/** Consecutive slices of at most `size` days from `start`; the last one ends at `end`. */
+export function chunkRange(start: string, end: string, size: number): DateRange[] {
+  const chunks: DateRange[] = [];
+  for (let chunkStart = start; chunkStart <= end; chunkStart = addCivilDays(chunkStart, size)) {
+    chunks.push({ start: chunkStart, end: minDate(addCivilDays(chunkStart, size - 1), end) });
   }
-  return dates;
+  return chunks;
 }
 
 /** Closed-open civil range: start inclusive, end exclusive at the next local midnight. */
@@ -96,6 +114,17 @@ export function civilToday(timeZone: string, now: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Civil date from a documented civil time, else from the UTC time plus its offset. */
+export function civilDateOf(civil: unknown, time: unknown, utcOffset: unknown): string | null {
+  const date = isRecord(civil) && isRecord(civil.date) ? civil.date : undefined;
+  if (typeof date?.year === 'number' && typeof date.month === 'number' && typeof date.day === 'number') {
+    return formatCivilDate({ year: date.year, month: date.month, day: date.day });
+  }
+  if (typeof time !== 'string') return null;
+  const shifted = new Date(Date.parse(time) + (parseDurationSeconds(utcOffset) ?? 0) * 1000);
+  return Number.isNaN(shifted.getTime()) ? null : shifted.toISOString().slice(0, 10);
+}
+
 /** Google duration strings such as `0s` or `-14400s`. */
 export function parseDurationSeconds(value: unknown): number | undefined {
   if (typeof value !== 'string') return undefined;
@@ -105,20 +134,22 @@ export function parseDurationSeconds(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function readInt(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
-  if (typeof value === 'string' && /^-?\d+$/.test(value)) {
-    const parsed = Number(value);
-    if (Number.isSafeInteger(parsed)) return parsed;
-  }
-  return undefined;
+/** Copies the documented interval fields, or null when either time is not a string. */
+export function readInterval(value: Record<string, unknown>): Interval | null {
+  const { startTime, endTime, startUtcOffset, endUtcOffset } = value;
+  if (typeof startTime !== 'string' || typeof endTime !== 'string') return null;
+  return {
+    startTime,
+    endTime,
+    ...(typeof startUtcOffset === 'string' ? { startUtcOffset } : {}),
+    ...(typeof endUtcOffset === 'string' ? { endUtcOffset } : {}),
+  };
 }
 
-export function readFinite(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value)) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return undefined;
+/** Whole minutes from start to end, or null when a time is unreadable or the interval runs backwards. */
+export function intervalMinutes(interval: Interval): number | null {
+  const startMs = Date.parse(interval.startTime);
+  const endMs = Date.parse(interval.endTime);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) return null;
+  return Math.round((endMs - startMs) / 60_000);
 }
