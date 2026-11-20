@@ -1,0 +1,14 @@
+{
+  "pairedDevices": [
+    {
+      "name": "users/me/pairedDevices/123456",
+      "deviceType": "TRACKER",
+      "batteryStatus": "High",
+      "batteryLevel": 88,
+      "lastSyncTime": "2026-03-04T07:05:00Z",
+      "deviceVersion": "Charge 6",
+      "macAddress": "00:11:22:33:44:55",
+      "features": ["STEPS", "HEART_RATE"]
+    }
+  ]
+}

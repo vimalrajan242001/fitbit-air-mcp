@@ -1,0 +1,15 @@
+{
+  "rollupDataPoints": [
+    {
+      "civilStartTime": {
+        "date": { "year": 2026, "month": 2, "day": 26 },
+        "time": {}
+      },
+      "civilEndTime": {
+        "date": { "year": 2026, "month": 2, "day": 26 },
+        "time": { "hours": 23, "minutes": 59, "seconds": 59 }
+      },
+      "steps": { "countSum": "3822" }
+    }
+  ]
+}
