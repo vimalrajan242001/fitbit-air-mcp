@@ -2,6 +2,7 @@
   "name": "fitbit-air-mcp",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Local MCP server that reads one person's Fitbit Air data through the Google Health API.",
   "engines": {

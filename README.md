@@ -212,3 +212,13 @@ If `test/fixtures/mcp-contract.json` fails, a tool's name, description, or input
 ## Agents & Contributing
 
 Agents working on this repository must read [AGENTS.md](AGENTS.md) and adhere to the minimal change standards. Technical context on the Google Health API data models is in [docs/context.md](docs/context.md).
+
+---
+
+## Support
+
+If this saves you time, you can [buy me a coffee](https://www.buymeacoffee.com/vimalrajan).
+
+## License
+
+[MIT](LICENSE)
